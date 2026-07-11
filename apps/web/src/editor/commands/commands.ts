@@ -22,6 +22,7 @@ import type {
   EditorCommand,
   TransformChanges,
 } from './domain-patch.js';
+import { isLayerEffectivelyEditable } from '../layers/layer-tree.js';
 
 const OBJECT_CHANGE_KEYS = [
   'x',
@@ -128,10 +129,10 @@ function objectPatch(before: MapObject, after: MapObject): DomainPatch {
 }
 
 function ensureEditableObject(context: CommandContext, object: MapObject): void {
-  if (object.locked) throw new Error(`Object ${object.id} is locked.`);
-  if (context.getLayer(object.layerId)?.locked) {
-    throw new Error(`Layer ${object.layerId} is locked.`);
-  }
+  if (object.locked || !object.visible) throw new Error(`Object ${object.id} is not editable.`);
+  const layers = Object.fromEntries(context.getDocument().layers.map((layer) => [layer.id, layer]));
+  if (!isLayerEffectivelyEditable(object.layerId, layers))
+    throw new Error(`Layer ${object.layerId} is not editable.`);
 }
 
 function ensureEditableLayer(context: CommandContext, layer: MapLayer): void {
@@ -387,25 +388,39 @@ export class CreateLayerCommand extends SnapshotCommand {
 export class UpdateLayerCommand extends SnapshotCommand {
   readonly id = 'layer.update';
   readonly label = 'Update layer';
+  readonly createdAt: number;
+
+  private before: MapLayer | undefined;
+  private after: MapLayer | undefined;
+  private lastMergedAt: number;
 
   constructor(
-    private readonly layerId: string,
+    readonly layerId: string,
     private readonly changes: LayerChanges,
+    readonly mergeKey?: string,
+    createdAt = Date.now(),
   ) {
     super();
+    this.createdAt = createdAt;
+    this.lastMergedAt = createdAt;
   }
 
   execute(context: CommandContext): CommandExecution {
     if (this.forward) return this.redo();
     const current = context.getLayer(this.layerId);
     if (!current) throw new Error(`Layer ${this.layerId} does not exist.`);
-    ensureEditableLayer(context, current);
+    const onlyAccessibilityChange = Object.keys(this.changes).every(
+      (key) => key === 'visible' || key === 'locked',
+    );
+    if (!onlyAccessibilityChange) ensureEditableLayer(context, current);
     if (this.changes.parentId !== undefined && this.changes.parentId !== current.parentId) {
       throw new Error('Changing a layer parent requires a dedicated move command.');
     }
 
     const next = mapLayerSchema.parse({ ...current, ...this.changes });
     if (!hasChangedLayerFields(current, next)) return { patches: [] };
+    this.before = current;
+    this.after = next;
     this.forward = [
       {
         type: 'layer.replace',
@@ -429,6 +444,44 @@ export class UpdateLayerCommand extends SnapshotCommand {
       },
     ];
     return { patches: this.forward };
+  }
+
+  mergeWith(next: EditorCommand): EditorCommand | undefined {
+    if (!(next instanceof UpdateLayerCommand)) return undefined;
+    if (
+      !this.mergeKey ||
+      this.mergeKey !== next.mergeKey ||
+      this.layerId !== next.layerId ||
+      next.createdAt - this.lastMergedAt > DEFAULT_COMMAND_MERGE_WINDOW_MS ||
+      !this.before ||
+      !next.after
+    )
+      return undefined;
+    this.after = next.after;
+    this.forward = [
+      {
+        type: 'layer.replace',
+        layer: next.after,
+        operation: {
+          type: 'layer.update',
+          layerId: next.after.id,
+          changes: changedLayerFields(this.before, next.after),
+        },
+      },
+    ];
+    this.inverse = [
+      {
+        type: 'layer.replace',
+        layer: this.before,
+        operation: {
+          type: 'layer.update',
+          layerId: this.before.id,
+          changes: changedLayerFields(next.after, this.before),
+        },
+      },
+    ];
+    this.lastMergedAt = next.createdAt;
+    return this;
   }
 }
 
@@ -474,7 +527,6 @@ export class DeleteLayerCommand extends SnapshotCommand {
 
     if (this.objectPolicy === 'delete') {
       for (const object of objects) {
-        ensureEditableObject(context, object);
         forward.push({ type: 'object.delete', objectId: object.id, operation: null });
         inverse.push({
           type: 'object.create',
@@ -484,7 +536,6 @@ export class DeleteLayerCommand extends SnapshotCommand {
       }
     } else if (target) {
       for (const object of objects) {
-        ensureEditableObject(context, object);
         const moved = mapObjectSchema.parse({ ...object, layerId: target.id });
         forward.push({ type: 'object.replace', object: moved, operation: null });
         inverse.push(objectPatch(moved, object));

@@ -12,6 +12,7 @@ import {
   CreateLayerCommand,
   DeleteLayerCommand,
   TransformObjectsCommand,
+  UpdateLayerCommand,
   UpdateObjectCommand,
 } from './commands.js';
 import type { EditorCommand } from './domain-patch.js';
@@ -180,6 +181,35 @@ describe('CommandManager', () => {
     manager.undo();
     expect(currentObject().layerId).toBe(sourceLayer.id);
     expect(rootLayerIds()).toEqual([document.layers[0]?.id, sourceLayer.id, targetLayer.id]);
+  });
+
+  it('allows a locked layer to be unlocked and merges continuous opacity changes', () => {
+    const manager = loadedManager();
+    const layer = useMapStore.getState().document?.layers[1];
+    if (!layer) throw new Error('Expected fixture stamp layer to be loaded.');
+    manager.execute(new UpdateLayerCommand(layer.id, { locked: true }));
+    manager.execute(new UpdateLayerCommand(layer.id, { locked: false }));
+    manager.execute(new UpdateLayerCommand(layer.id, { opacity: 0.8 }, 'opacity', 0));
+    manager.execute(new UpdateLayerCommand(layer.id, { opacity: 0.4 }, 'opacity', 500));
+
+    expect(useMapStore.getState().layersById[layer.id]).toMatchObject({
+      locked: false,
+      opacity: 0.4,
+    });
+    expect(manager.getSnapshot().undoDepth).toBe(3);
+    manager.undo();
+    expect(useMapStore.getState().layersById[layer.id]?.opacity).toBe(1);
+  });
+
+  it('rejects object edits through a hidden layer', () => {
+    const manager = loadedManager();
+    const objectValue = currentObject();
+    manager.execute(new UpdateLayerCommand(objectValue.layerId, { visible: false }));
+
+    expect(() => manager.execute(new UpdateObjectCommand(objectValue.id, { x: 2000 }))).toThrow(
+      'is not editable',
+    );
+    expect(currentObject().x).toBe(objectValue.x);
   });
 
   it('does not retain history or mutate state when a patch batch is rejected', () => {

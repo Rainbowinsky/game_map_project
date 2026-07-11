@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
+import { retryApiQuery } from './services/query-retry.js';
+
 const AuthPage = lazy(() =>
   import('./pages/AuthPage.js').then((module) => ({ default: module.AuthPage })),
 );
@@ -14,7 +16,7 @@ const ProjectsPage = lazy(() =>
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { refetchOnWindowFocus: false, retry: 1 },
+    queries: { refetchOnWindowFocus: false, retry: retryApiQuery },
     mutations: { retry: false },
   },
 });

@@ -15,6 +15,8 @@ import {
   type MapDocument,
 } from '@fantasy-map/map-model';
 
+import { useSessionStore } from '../stores/session-store.js';
+
 const apiBaseUrl =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ??
   'http://127.0.0.1:3000/api/v1';
@@ -78,6 +80,13 @@ async function apiRequest<Output>(
 
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      accessToken &&
+      useSessionStore.getState().session?.accessToken === accessToken
+    ) {
+      useSessionStore.getState().clearSession();
+    }
     const parsed = apiErrorSchema.safeParse(body);
     throw new ApiError(
       parsed.success ? parsed.data.error.code : `HTTP_${response.status}`,

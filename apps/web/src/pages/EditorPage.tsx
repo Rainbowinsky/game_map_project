@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useParams } from 'react-router-dom';
 
@@ -6,6 +6,7 @@ import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { Icon } from '../components/Icon.js';
 import { LoadingState } from '../components/LoadingState.js';
+import { LayerPanel } from '../components/LayerPanel.js';
 import {
   PixiCanvas,
   type CanvasTelemetry,
@@ -31,11 +32,6 @@ export function EditorPage() {
   const { mapId = '' } = useParams();
   const session = useSessionStore((state) => state.session);
   const document = useMapStore((state) => state.document);
-  const layersById = useMapStore((state) => state.layersById);
-  const layers = useMemo(
-    () => Object.values(layersById).sort((a, b) => b.order - a.order),
-    [layersById],
-  );
   const objectCount = useMapStore((state) => Object.keys(state.objectsById).length);
   const clearMap = useMapStore((state) => state.clear);
   const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
@@ -70,7 +66,6 @@ export function EditorPage() {
     queryKey: ['map-load', mapId],
     queryFn: () => loadMapIntoStore(session?.accessToken ?? '', mapId),
     enabled: Boolean(session && mapId),
-    retry: 1,
     staleTime: 30_000,
   });
 
@@ -219,6 +214,7 @@ export function EditorPage() {
         <PixiCanvas
           document={document}
           panMode={tool === 'pan'}
+          patchBus={commandManager.patches}
           onReady={onCanvasReady}
           onTelemetry={onTelemetry}
         />
@@ -275,30 +271,7 @@ export function EditorPage() {
         </div>
         <div key={rightTab} className="tab-content tab-enter">
           {rightTab === 'layers' ? (
-            <>
-              <div className="layer-actions">
-                <span>{layers.length} 个图层</span>
-                <button disabled>
-                  <Icon name="plus" />
-                  新建
-                </button>
-              </div>
-              <div className="layer-list">
-                {layers.map((layer) => (
-                  <button className="layer-row" key={layer.id}>
-                    <span className="layer-row__drag">⠿</span>
-                    <span className="layer-row__thumb">
-                      <Icon name={layer.type === 'group' ? 'layers' : 'stamp'} />
-                    </span>
-                    <span>
-                      <strong>{layer.name}</strong>
-                      <small>{layer.type.toUpperCase()}</small>
-                    </span>
-                    <i className={layer.visible ? 'visible' : ''} />
-                  </button>
-                ))}
-              </div>
-            </>
+            <LayerPanel commandManager={commandManager} />
           ) : (
             <div className="properties-empty">
               <span>

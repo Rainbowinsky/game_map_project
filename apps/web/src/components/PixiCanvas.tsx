@@ -3,6 +3,8 @@ import type { CameraState, MapDocument, ScreenPoint, WorldPoint } from '@fantasy
 
 import { CameraController, type CameraSnapshot } from '../camera/CameraController.js';
 import { MapRenderer } from '../renderer/MapRenderer.js';
+import type { PatchBus } from '../editor/commands/patch-bus.js';
+import { useMapStore } from '../stores/map-store.js';
 
 export interface CanvasTelemetry {
   readonly camera: CameraState;
@@ -19,6 +21,7 @@ export interface PixiCanvasHandle {
 interface PixiCanvasProps {
   readonly document: MapDocument;
   readonly panMode: boolean;
+  readonly patchBus: PatchBus;
   readonly onReady?: (handle: PixiCanvasHandle) => void;
   readonly onTelemetry: (telemetry: CanvasTelemetry) => void;
 }
@@ -28,14 +31,17 @@ function localPoint(event: PointerEvent | WheelEvent, element: HTMLElement): Scr
   return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
 }
 
-export function PixiCanvas({ document, panMode, onReady, onTelemetry }: PixiCanvasProps) {
+export function PixiCanvas({ document, panMode, patchBus, onReady, onTelemetry }: PixiCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const initialDocumentRef = useRef(document);
+  if (initialDocumentRef.current.id !== document.id) initialDocumentRef.current = document;
   const panModeRef = useRef(panMode);
   panModeRef.current = panMode;
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const initialDocument = initialDocumentRef.current;
 
     let disposed = false;
     let spacePressed = false;
@@ -44,11 +50,14 @@ export function PixiCanvas({ document, panMode, onReady, onTelemetry }: PixiCanv
     let pointerWorld: WorldPoint | null = null;
     let telemetryCamera: CameraState = { x: 0, y: 0, zoom: 1 };
     let telemetryTimer = 0;
-    const renderer = new MapRenderer(document);
+    const renderer = new MapRenderer(initialDocument);
+    const unsubscribeProjection = patchBus.subscribe(() => {
+      renderer.syncLayers(Object.values(useMapStore.getState().layersById));
+    });
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const controller = new CameraController({
-      minZoom: document.settings.camera.minZoom,
-      maxZoom: document.settings.camera.maxZoom,
+      minZoom: initialDocument.settings.camera.minZoom,
+      maxZoom: initialDocument.settings.camera.maxZoom,
       onChange: ({ camera }: CameraSnapshot) => {
         telemetryCamera = camera;
         renderer.setCamera(camera);
@@ -138,13 +147,17 @@ export function PixiCanvas({ document, panMode, onReady, onTelemetry }: PixiCanv
     void renderer.mount(host).then(() => {
       if (disposed) return;
       resize();
-      controller.fit({ x: 0, y: 0, width: document.width, height: document.height }, 72, false);
+      controller.fit(
+        { x: 0, y: 0, width: initialDocument.width, height: initialDocument.height },
+        72,
+        false,
+      );
       onReady?.({
         zoomIn: () => controller.zoomBy(1.25),
         zoomOut: () => controller.zoomBy(0.8),
         fitMap: (animate = true) =>
           controller.fit(
-            { x: 0, y: 0, width: document.width, height: document.height },
+            { x: 0, y: 0, width: initialDocument.width, height: initialDocument.height },
             72,
             animate && !reducedMotion,
           ),
@@ -163,9 +176,10 @@ export function PixiCanvas({ document, panMode, onReady, onTelemetry }: PixiCanv
       window.removeEventListener('keyup', onKeyUp);
       if (telemetryTimer) window.clearTimeout(telemetryTimer);
       controller.destroy();
+      unsubscribeProjection();
       renderer.destroy();
     };
-  }, [document, onReady, onTelemetry]);
+  }, [document.id, onReady, onTelemetry, patchBus]);
 
   return (
     <div

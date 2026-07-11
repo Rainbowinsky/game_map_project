@@ -5,6 +5,9 @@ import {
   type MapDocument,
   type Viewport,
 } from '@fantasy-map/map-model';
+import type { MapLayer } from '@fantasy-map/map-model';
+
+import { RendererProjection } from './RendererProjection.js';
 
 const GRID_LINE_LIMIT = 180;
 
@@ -26,6 +29,7 @@ export class MapRenderer {
   private readonly mapBackground = new Graphics();
   private readonly mapClipRoot = new Container();
   private readonly layerRoot = new Container();
+  private readonly projection = new RendererProjection(this.layerRoot);
   private readonly worldGrid = new Graphics();
   private readonly worldOverlay = new Container();
   private readonly mapBoundary = new Graphics();
@@ -61,6 +65,7 @@ export class MapRenderer {
     this.application.stage.addChild(this.worldRoot, this.screenOverlay);
     this.worldRoot.addChild(this.mapBackground, this.mapClipRoot, this.mapBoundary);
     this.mapClipRoot.addChild(this.layerRoot, this.worldGrid, this.worldOverlay);
+    this.projection.sync(this.document.layers);
     this.drawStaticScene();
     this.initialized = true;
     return canvas;
@@ -81,6 +86,11 @@ export class MapRenderer {
 
   getFps(): number {
     return this.initialized ? Math.round(this.application.ticker.FPS) : 0;
+  }
+
+  syncLayers(layers: readonly MapLayer[]): void {
+    if (this.destroyed) return;
+    this.projection.sync(layers);
   }
 
   destroy(): void {

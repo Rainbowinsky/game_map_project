@@ -1,6 +1,6 @@
 # 第一阶段设计文档索引
 
-状态：P0-P3 已完成；认证、当前用户与所有权隔离已通过本机 MySQL 和 CI 配置的集成测试。
+状态：P0-P8 已完成；编辑器已具备数据加载、相机、命令历史与图层编辑闭环。
 
 本目录是“基础编辑器 MVP”的实施基线：
 
@@ -13,6 +13,9 @@
 - [p5-implementation-report.md](./p5-implementation-report.md)：P5 Web 编辑器壳、数据加载、动画与验证结果。
 - [p2-implementation-report.md](./p2-implementation-report.md)：P2 数据库/API/存储基础设施、验证结果与数据库待办。
 - [p3-implementation-report.md](./p3-implementation-report.md)：P3 密码、JWT、认证 Guard、限流和所有权隔离实现。
+- [p6-implementation-report.md](./p6-implementation-report.md)：P6 Pixi 生命周期、相机控制与画布验证结果。
+- [p7-implementation-report.md](./p7-implementation-report.md)：P7 Command、历史、PatchBus 与操作日志边界。
+- [p8-implementation-report.md](./p8-implementation-report.md)：P8 图层面板、命令接入、删除策略与渲染投影。
 
 ## 第一阶段范围
 

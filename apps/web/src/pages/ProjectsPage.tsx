@@ -27,7 +27,6 @@ export function ProjectsPage() {
     queryKey: ['projects'],
     queryFn: () => api.listProjects(session?.accessToken ?? ''),
     enabled: Boolean(session),
-    retry: 1,
   });
   const createWorld = useMutation({
     mutationFn: async () => {

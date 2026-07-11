@@ -6,11 +6,13 @@ export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'offline' | 'error' | 'c
 interface EditorState {
   tool: EditorTool;
   selection: string[];
+  activeLayerId: string | null;
   leftPanelOpen: boolean;
   rightPanelOpen: boolean;
   saveStatus: SaveStatus;
   setTool: (tool: EditorTool) => void;
   setSelection: (selection: string[]) => void;
+  setActiveLayer: (layerId: string | null) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setSaveStatus: (saveStatus: SaveStatus) => void;
@@ -20,6 +22,7 @@ interface EditorState {
 const initialState = {
   tool: 'select' as const,
   selection: [] as string[],
+  activeLayerId: null as string | null,
   leftPanelOpen: true,
   rightPanelOpen: true,
   saveStatus: 'saved' as const,
@@ -29,6 +32,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   ...initialState,
   setTool: (tool) => set({ tool }),
   setSelection: (selection) => set({ selection }),
+  setActiveLayer: (activeLayerId) => set({ activeLayerId, selection: [] }),
   toggleLeftPanel: () => set((state) => ({ leftPanelOpen: !state.leftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
   setSaveStatus: (saveStatus) => set({ saveStatus }),
