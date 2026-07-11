@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useParams } from 'react-router-dom';
 
@@ -16,6 +16,9 @@ import { readableError } from '../services/api-client.js';
 import { useEditorStore, type EditorTool } from '../stores/editor-store.js';
 import { useMapStore } from '../stores/map-store.js';
 import { useSessionStore } from '../stores/session-store.js';
+import { CommandManager } from '../editor/commands/CommandManager.js';
+import { createMapCommandContext } from '../editor/commands/map-command-context.js';
+import { handleHistoryShortcut } from '../editor/commands/shortcuts.js';
 
 const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
   [
@@ -35,6 +38,7 @@ export function EditorPage() {
   );
   const objectCount = useMapStore((state) => Object.keys(state.objectsById).length);
   const clearMap = useMapStore((state) => state.clear);
+  const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
   const tool = useEditorStore((state) => state.tool);
   const setTool = useEditorStore((state) => state.setTool);
   const leftPanelOpen = useEditorStore((state) => state.leftPanelOpen);
@@ -43,6 +47,16 @@ export function EditorPage() {
   const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
   const [rightTab, setRightTab] = useState<'layers' | 'properties'>('layers');
   const canvasHandle = useRef<PixiCanvasHandle | null>(null);
+  const commandManagerRef = useRef<CommandManager | null>(null);
+  if (!commandManagerRef.current) {
+    commandManagerRef.current = new CommandManager(createMapCommandContext());
+  }
+  const commandManager = commandManagerRef.current;
+  const history = useSyncExternalStore(
+    commandManager.subscribe,
+    commandManager.getSnapshot,
+    commandManager.getSnapshot,
+  );
   const [telemetry, setTelemetry] = useState<CanvasTelemetry>({
     camera: { x: 0, y: 0, zoom: 1 },
     pointerWorld: null,
@@ -61,9 +75,27 @@ export function EditorPage() {
   });
 
   useEffect(() => {
-    clearMap();
+    // Avoid clearing a same-map response that resolved between render and this
+    // effect; on route changes, stale document state still clears immediately.
+    if (useMapStore.getState().document?.id !== mapId) clearMap();
+    commandManager.clear();
+    setSaveStatus('saved');
     return clearMap;
-  }, [mapId, clearMap]);
+  }, [mapId, clearMap, commandManager, setSaveStatus]);
+  useEffect(
+    () =>
+      commandManager.patches.subscribe(() => {
+        setSaveStatus('dirty');
+      }),
+    [commandManager, setSaveStatus],
+  );
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      handleHistoryShortcut(event, commandManager);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [commandManager]);
   if (!session) return <Navigate to="/login" replace />;
   if (query.isError)
     return (
@@ -88,10 +120,18 @@ export function EditorPage() {
           <h1>{document.name}</h1>
         </div>
         <div className="editor-topbar__center">
-          <button disabled aria-label="撤销">
+          <button
+            disabled={!history.canUndo}
+            onClick={() => commandManager.undo()}
+            aria-label="撤销"
+          >
             ↶
           </button>
-          <button disabled aria-label="重做">
+          <button
+            disabled={!history.canRedo}
+            onClick={() => commandManager.redo()}
+            aria-label="重做"
+          >
             ↷
           </button>
         </div>
