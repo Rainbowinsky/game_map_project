@@ -173,16 +173,16 @@ describe('P3 authentication and ownership', () => {
     });
 
     const checks = [
-      ownership.requireProject(authA.user.id, project.id),
-      ownership.requireMap(authA.user.id, map.id),
-      ownership.requireLayer(authA.user.id, layer.id),
-      ownership.requireChunk(authA.user.id, chunk.id),
-      ownership.requireObject(authA.user.id, object.id),
-      ownership.requireAsset(authA.user.id, asset.id),
+      () => ownership.requireProject(authA.user.id, project.id),
+      () => ownership.requireMap(authA.user.id, map.id),
+      () => ownership.requireLayer(authA.user.id, layer.id),
+      () => ownership.requireChunk(authA.user.id, chunk.id),
+      () => ownership.requireObject(authA.user.id, object.id),
+      () => ownership.requireAsset(authA.user.id, asset.id),
     ];
 
     for (const check of checks) {
-      await expect(check).rejects.toMatchObject({
+      await expect(check()).rejects.toMatchObject({
         code: 'RESOURCE_NOT_FOUND',
         statusCode: 404,
       });

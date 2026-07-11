@@ -25,6 +25,7 @@ export interface JournalSnapshot {
   readonly baseRevision: number;
   readonly pendingEntries: number;
   readonly pendingOperations: number;
+  readonly persistenceError: string | null;
 }
 
 type JournalListener = (snapshot: JournalSnapshot) => void;
@@ -60,6 +61,9 @@ export class DurableOperationJournal implements OperationJournal {
   private record: PersistedJournal;
   private readonly listeners = new Set<JournalListener>();
   private writeChain: Promise<void> = Promise.resolve();
+  private queuedWrite = 0;
+  private persistedThrough = 0;
+  private persistenceError: Error | null = null;
 
   constructor(
     private readonly persistence: RecoveryPersistence,
@@ -123,6 +127,7 @@ export class DurableOperationJournal implements OperationJournal {
         (total, entry) => total + entry.operations.length,
         0,
       ),
+      persistenceError: this.persistenceError?.message ?? null,
     };
   }
 
@@ -131,7 +136,13 @@ export class DurableOperationJournal implements OperationJournal {
   }
 
   async beginBatch(maxOperations = 500): Promise<PersistedSaveBatch | null> {
-    if (this.record.activeBatch) return structuredClone(this.record.activeBatch);
+    if (this.record.activeBatch) {
+      // A retry must prove that the active mutation is durable before it can
+      // reach the API. This also repairs a transient IndexedDB write failure.
+      this.queueWrite();
+      await this.persisted();
+      return structuredClone(this.record.activeBatch);
+    }
     if (this.record.entries.length === 0) return null;
     const selected: PersistedJournalEntry[] = [];
     let operationCount = 0;
@@ -166,7 +177,7 @@ export class DurableOperationJournal implements OperationJournal {
       updatedAt: Date.now(),
     };
     if (this.record.entries.length === 0) {
-      this.writeChain = this.writeChain.then(() => this.persistence.delete(this.record.key));
+      this.queueDelete();
     } else {
       this.queueWrite();
     }
@@ -176,18 +187,46 @@ export class DurableOperationJournal implements OperationJournal {
 
   async discard(): Promise<void> {
     this.record = { ...this.record, entries: [], activeBatch: null, updatedAt: Date.now() };
-    this.writeChain = this.writeChain.then(() => this.persistence.delete(this.record.key));
+    this.queueDelete();
     await this.persisted();
     this.notify();
   }
 
   persisted(): Promise<void> {
-    return this.writeChain;
+    const target = this.queuedWrite;
+    return this.writeChain.then(() => {
+      if (this.persistedThrough < target) {
+        throw this.persistenceError ?? new Error('Unable to persist the local recovery journal.');
+      }
+    });
   }
 
   private queueWrite(): void {
     const snapshot = structuredClone(this.record);
-    this.writeChain = this.writeChain.then(() => this.persistence.put(snapshot));
+    this.queuePersistence(() => this.persistence.put(snapshot));
+  }
+
+  private queueDelete(): void {
+    const key = this.record.key;
+    this.queuePersistence(() => this.persistence.delete(key));
+  }
+
+  private queuePersistence(action: () => Promise<void>): void {
+    const sequence = ++this.queuedWrite;
+    this.writeChain = this.writeChain.then(async () => {
+      const previousError = this.persistenceError;
+      try {
+        await action();
+        this.persistedThrough = sequence;
+        this.persistenceError = null;
+      } catch (error) {
+        this.persistenceError =
+          error instanceof Error
+            ? error
+            : new Error('Unable to persist the local recovery journal.');
+      }
+      if (previousError !== this.persistenceError) this.notify();
+    });
   }
 
   private notify(): void {

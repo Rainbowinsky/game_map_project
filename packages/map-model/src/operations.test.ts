@@ -36,6 +36,23 @@ describe('operation schemas', () => {
     ).toThrow();
   });
 
+  it('enforces the 500-operation persistence batch boundary', () => {
+    const request = createApplyOperationsRequestFixture();
+    const operation = request.operations[0]!;
+    expect(
+      applyOperationsRequestSchema.parse({
+        ...request,
+        operations: Array.from({ length: 500 }, () => operation),
+      }).operations,
+    ).toHaveLength(500);
+    expect(() =>
+      applyOperationsRequestSchema.parse({
+        ...request,
+        operations: Array.from({ length: 501 }, () => operation),
+      }),
+    ).toThrow();
+  });
+
   it('requires a target layer only for the move deletion policy', () => {
     expect(() =>
       mapOperationSchema.parse({

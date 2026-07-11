@@ -14,6 +14,7 @@ import { getStampAsset, stampPlacementScale } from '../assets/stamp-assets.js';
 import { CameraController, type CameraSnapshot } from '../camera/CameraController.js';
 import { CreateObjectCommand, TransformObjectsCommand } from '../editor/commands/commands.js';
 import type { CommandManager } from '../editor/commands/CommandManager.js';
+import type { PatchEvent } from '../editor/commands/patch-bus.js';
 import { isLayerEffectivelyEditable } from '../editor/layers/layer-tree.js';
 import {
   rectFromPoints,
@@ -30,6 +31,7 @@ export interface CanvasTelemetry {
   readonly camera: CameraState;
   readonly pointerWorld: WorldPoint | null;
   readonly fps: number;
+  readonly visibleObjectCount: number;
 }
 
 export interface PixiCanvasHandle {
@@ -180,8 +182,34 @@ export function PixiCanvas({
       renderer.syncLayers(Object.values(map.layersById));
       renderer.syncObjects(Object.values(map.objectsById));
       renderer.setSelection(selected);
+      scheduleTelemetry();
     };
-    const unsubscribeProjection = commandManager.patches.subscribe(syncProjection);
+    const applyProjectionPatch = ({ patches }: PatchEvent) => {
+      const map = useMapStore.getState();
+      const selected = useEditorStore
+        .getState()
+        .selection.filter((objectId) => Boolean(map.objectsById[objectId]));
+      if (selected.length !== useEditorStore.getState().selection.length) {
+        useEditorStore.getState().setSelection(selected);
+      }
+      if (
+        patches.some(
+          (patch) => patch.type.startsWith('layer.') || patch.type === 'document.replace',
+        )
+      ) {
+        renderer.syncLayers(Object.values(map.layersById));
+      }
+      for (const patch of patches) {
+        if (patch.type === 'object.create' || patch.type === 'object.replace') {
+          renderer.upsertObject(patch.object);
+        } else if (patch.type === 'object.delete') {
+          renderer.removeObject(patch.objectId);
+        }
+      }
+      renderer.setSelection(selected);
+      scheduleTelemetry();
+    };
+    const unsubscribeProjection = commandManager.patches.subscribe(applyProjectionPatch);
     const unsubscribeSelection = useEditorStore.subscribe((state, previous) => {
       if (state.selection !== previous.selection) renderer.setSelection(state.selection);
     });
@@ -201,7 +229,12 @@ export function PixiCanvas({
       if (telemetryTimer) return;
       telemetryTimer = window.setTimeout(() => {
         telemetryTimer = 0;
-        onTelemetry({ camera: telemetryCamera, pointerWorld, fps: renderer.getFps() });
+        onTelemetry({
+          camera: telemetryCamera,
+          pointerWorld,
+          fps: renderer.getFps(),
+          visibleObjectCount: renderer.getVisibleObjectCount(),
+        });
       }, 100);
     };
 

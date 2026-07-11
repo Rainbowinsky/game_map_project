@@ -61,6 +61,7 @@ const mapDocument = (id = ids.map, name = '灰烬海岸', revision = 0) => ({
 async function prepare(page: Page) {
   let revision = 0;
   let offline = false;
+  let operationsOffline = false;
   let savedObjects: Array<Record<string, unknown>> = [];
   const receipts = new Map<string, Record<string, unknown>>();
   await page.addInitScript(
@@ -73,7 +74,7 @@ async function prepare(page: Page) {
     const method = route.request().method();
     let data: unknown = {};
     if (method === 'POST' && path.endsWith(`/maps/${ids.map}/operations`)) {
-      if (offline) return route.abort('internetdisconnected');
+      if (offline || operationsOffline) return route.abort('internetdisconnected');
       const input = route.request().postDataJSON() as {
         baseRevision: number;
         clientMutationId: string;
@@ -203,7 +204,10 @@ async function prepare(page: Page) {
       body: JSON.stringify({ data, meta: { requestId: 'e2e-request' } }),
     });
   });
-  return { setOffline: (value: boolean) => (offline = value) };
+  return {
+    setOffline: (value: boolean) => (offline = value),
+    setOperationsOffline: (value: boolean) => (operationsOffline = value),
+  };
 }
 
 test('opens a recent map and restores the editor route after refresh', async ({ page }) => {
@@ -301,7 +305,7 @@ test('places, selects, transforms, duplicates and deletes a stamp', async ({ pag
     clientX: point.x,
     clientY: point.y,
   });
-  await expect(page.getByText('1 个对象', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
 
   await page.getByRole('button', { name: '选择' }).click();
   await canvas.dispatchEvent('pointerdown', {
@@ -327,11 +331,11 @@ test('places, selects, transforms, duplicates and deletes a stamp', async ({ pag
   await page.getByRole('button', { name: '属性', exact: true }).click();
   await expect(page.getByRole('heading', { name: '远峰' })).toBeVisible();
   await page.keyboard.press('Control+d');
-  await expect(page.getByText('2 个对象', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('visible-object-count')).toContainText('2 / 2');
   await page.keyboard.press('Delete');
-  await expect(page.getByText('1 个对象', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
   await page.getByRole('button', { name: '撤销' }).click();
-  await expect(page.getByText('2 个对象', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('visible-object-count')).toContainText('2 / 2');
   await expect(page.getByTestId('save-status')).toContainText('已保存');
 });
 
@@ -353,13 +357,15 @@ test('recovers an offline edit from IndexedDB and saves it after reload', async 
   });
   await expect(page.getByTestId('save-status')).toContainText('离线');
 
+  network.setOperationsOffline(true);
   network.setOffline(false);
   await page.reload();
   await expect(page.getByRole('dialog')).toContainText('尚未提交');
+  network.setOperationsOffline(false);
   await page.getByRole('button', { name: '恢复更改' }).click();
   await expect(page.getByTestId('save-status')).toContainText('已保存');
   await page.reload();
-  await expect(page.getByText('1 个对象', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
 });
 
 test('creates a project and map through the animated dialog', async ({ page }) => {

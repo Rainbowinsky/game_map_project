@@ -25,6 +25,7 @@ describe('RendererProjection', () => {
     projection.sync([changed]);
     const container = projection.getLayerContainer(changed.id);
     expect(container).toMatchObject({ visible: false, alpha: 0.35, blendMode: 'multiply' });
+    expect(projection.isLayerEffectivelyVisible(changed.id)).toBe(false);
     expect(projection.getLayerContainer(document.layers[0]!.id)).toBeUndefined();
     root.destroy({ children: true });
   });
@@ -45,6 +46,7 @@ describe('RendererProjection', () => {
     expect(projection.getLayerContainer(group.id)?.children).toEqual([
       projection.getLayerContainer(child.id),
     ]);
+    expect(projection.isLayerEffectivelyVisible(child.id)).toBe(true);
     root.destroy({ children: true });
   });
 });

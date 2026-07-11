@@ -56,7 +56,7 @@ export class MapRenderer {
   private camera: CameraState = { x: 0, y: 0, zoom: 1 };
   private initialized = false;
   private destroyed = false;
-  private mapObjects: readonly MapObject[] = [];
+  private readonly mapObjects = new Map<string, MapObject>();
   private mapLayers: readonly MapLayer[];
   private selectedIds: readonly string[] = [];
   private previewObjects: readonly MapObject[] | null = null;
@@ -113,6 +113,10 @@ export class MapRenderer {
     return this.initialized ? Math.round(this.application.ticker.FPS) : 0;
   }
 
+  getVisibleObjectCount(): number {
+    return this.objects.getVisibleObjectCount();
+  }
+
   getExportMaxTextureSize(): number | null {
     return this.initialized ? rendererMaxTextureSize(this.application.renderer) : null;
   }
@@ -125,7 +129,7 @@ export class MapRenderer {
       renderer: this.application.renderer,
       document: this.document,
       layers: this.mapLayers,
-      objects: this.mapObjects,
+      objects: [...this.mapObjects.values()],
       requestedLongEdge,
       constraints: { deviceMaxTextureSize: this.getExportMaxTextureSize() },
     });
@@ -135,15 +139,30 @@ export class MapRenderer {
     if (this.destroyed) return;
     this.mapLayers = layers;
     this.projection.sync(layers);
-    this.objects.sync(this.mapObjects);
   }
 
   syncObjects(objects: readonly MapObject[]): void {
     if (this.destroyed) return;
-    this.mapObjects = objects;
+    this.mapObjects.clear();
+    for (const object of objects) this.mapObjects.set(object.id, object);
     this.objects.sync(objects);
     this.drawSelection();
     this.updateCulling();
+  }
+
+  /** Projects a committed object patch without resyncing unaffected stamps. */
+  upsertObject(object: MapObject): void {
+    if (this.destroyed) return;
+    this.mapObjects.set(object.id, object);
+    this.objects.upsert(object);
+    this.drawSelection();
+  }
+
+  removeObject(objectId: string): void {
+    if (this.destroyed) return;
+    this.mapObjects.delete(objectId);
+    this.objects.removeObject(objectId);
+    this.drawSelection();
   }
 
   setSelection(objectIds: readonly string[]): void {
@@ -172,11 +191,11 @@ export class MapRenderer {
   }
 
   pick(point: WorldPoint): MapObject | undefined {
-    return pickObject(point, this.mapObjects, this.mapLayers);
+    return pickObject(point, [...this.mapObjects.values()], this.mapLayers);
   }
 
   objectsInRect(rect: WorldRect): string[] {
-    return objectsIntersectingRect(rect, this.mapObjects, this.mapLayers);
+    return objectsIntersectingRect(rect, [...this.mapObjects.values()], this.mapLayers);
   }
 
   hitSelectionHandle(point: WorldPoint): TransformMode | null {
@@ -200,6 +219,7 @@ export class MapRenderer {
     if (this.destroyed) return;
     this.destroyed = true;
     this.objects.destroy();
+    this.mapObjects.clear();
     this.assets.destroy();
     if (this.initialized) this.application.destroy(true, { children: true });
   }
@@ -265,7 +285,7 @@ export class MapRenderer {
   }
 
   private currentSelectionBounds(): WorldRect | null {
-    const source = this.previewObjects ?? this.mapObjects;
+    const source = this.previewObjects ?? [...this.mapObjects.values()];
     return selectionBounds(source.filter((object) => this.selectedIds.includes(object.id)));
   }
 

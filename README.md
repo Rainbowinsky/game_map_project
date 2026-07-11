@@ -2,9 +2,7 @@
 
 面向小说作者、游戏策划、跑团主持人和世界观创作者的 Web 端 2D 世界地图编辑器。
 
-当前状态：第一阶段 P0-P11 已完成。项目已具备认证与所有权隔离、项目/地图/图层/Chunk/操作 API、桌面编辑器、Pixi 相机与渲染、Command 撤销重做、图层编辑、原创图章的放置/多选/变换、自动保存和崩溃恢复，以及安全的整图 PNG 导出闭环。
-
-尚未完成：P12 性能安全收口。
+当前状态：第一阶段 P0-P12 已完成。项目已具备认证与所有权隔离、项目/地图/图层/Chunk/操作 API、桌面编辑器、Pixi 相机与渲染、Command 撤销重做、图层编辑、原创图章的放置/多选/变换、自动保存和崩溃恢复，以及安全的整图 PNG 导出闭环。
 
 ## 已实现能力
 
@@ -17,6 +15,7 @@
 - 原创山峰、树木、城镇 SVG 图章，支持点击或 HTML5 拖放到画布；新图章会按当前 zoom 自动获得稳定、可操作的屏幕尺寸
 - 点击选择、Shift 多选、框选、移动、共同 bounds 缩放、旋转、复制粘贴、删除和前后移
 - Pixi 增量对象投影、共享 Texture 生命周期和视口外对象裁剪
+- 2,000/5,000 图章确定性基准场景、增量 patch 投影、无 Pixi 逐图章事件遍历，以及 FPS/可见对象/待保存操作遥测
 - 800 ms 防抖、5 s 最大等待的串行自动保存，网络失败指数退避，409 进入冲突状态
 - IndexedDB 先写日志、幂等 mutation 恢复、刷新恢复对话框、离开保护和多标签编辑提醒
 - 安全的整图 PNG 导出：默认 2048 px 长边、设备纹理/像素/内存保护、独立 RenderTexture、资源就绪检查和 Blob 下载
@@ -66,6 +65,7 @@ pnpm test
 pnpm test:integration
 pnpm build
 pnpm test:e2e
+pnpm --filter @fantasy-map/web test:benchmark
 ```
 
 CI 使用 MySQL 8.0 独立测试库执行认证、所有权和地图操作集成测试。Playwright 已纳入门禁，覆盖项目/地图创建、编辑器恢复，以及图章放置、选择、变换、复制、删除和撤销主路径。浏览器缺失时先执行 `pnpm exec playwright install chromium`。
@@ -124,5 +124,7 @@ CI 使用 MySQL 8.0 独立测试库执行认证、所有权和地图操作集成
 - [P9 图章、选择与变换](./docs/phase-1/p9-implementation-report.md)
 - [P10 自动保存与崩溃恢复](./docs/phase-1/p10-implementation-report.md)
 - [P11 基础 PNG 导出](./docs/phase-1/p11-implementation-report.md)
+- [P12 性能、安全、E2E 与文档收口](./docs/phase-1/p12-implementation-report.md)
+- [P12 基准运行与记录规范](./docs/phase-1/p12-benchmark-protocol.md)
 
-下一步按实施计划进入 P12：性能、安全、E2E 与文档收口。
+第一阶段已收口；后续能力边界见 P12 实现报告。

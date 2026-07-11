@@ -15,6 +15,16 @@ function createJournal(persistence = new MemoryRecoveryPersistence()) {
   };
 }
 
+class FailFirstWritePersistence extends MemoryRecoveryPersistence {
+  private attempts = 0;
+
+  override async put(record: Parameters<MemoryRecoveryPersistence['put']>[0]): Promise<void> {
+    this.attempts += 1;
+    if (this.attempts === 1) throw new Error('IndexedDB quota exceeded.');
+    await super.put(record);
+  }
+}
+
 describe('DurableOperationJournal', () => {
   it('merges safe consecutive updates before creating a save batch', async () => {
     const { journal } = createJournal();
@@ -77,5 +87,24 @@ describe('DurableOperationJournal', () => {
       (await loadRecovery(persistence, '10000000-0000-4000-8000-000000000099', FIXTURE_IDS.map))
         .kind,
     ).toBe('none');
+  });
+
+  it('reports a recovery-storage failure and repairs it before sending a batch', async () => {
+    const persistence = new FailFirstWritePersistence();
+    const { journal } = createJournal(persistence);
+    journal.append({
+      source: 'execute',
+      operations: [createApplyOperationsRequestFixture().operations[0]!],
+    });
+
+    await expect(journal.persisted()).rejects.toThrow('IndexedDB quota exceeded.');
+    expect(journal.getSnapshot().persistenceError).toBe('IndexedDB quota exceeded.');
+
+    const batch = await journal.beginBatch();
+    expect(batch?.operations).toHaveLength(1);
+    expect(journal.getSnapshot().persistenceError).toBeNull();
+    expect((await loadRecovery(persistence, FIXTURE_IDS.project, FIXTURE_IDS.map)).kind).toBe(
+      'valid',
+    );
   });
 });

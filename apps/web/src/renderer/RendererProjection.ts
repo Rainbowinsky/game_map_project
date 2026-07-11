@@ -60,4 +60,14 @@ export class RendererProjection {
   getLayerContainer(layerId: string): Container | undefined {
     return this.containers.get(layerId);
   }
+
+  isLayerEffectivelyVisible(layerId: string): boolean {
+    let current: Container | null | undefined = this.containers.get(layerId);
+    while (current) {
+      if (!current.visible) return false;
+      if (current === this.root) return true;
+      current = current.parent;
+    }
+    return false;
+  }
 }

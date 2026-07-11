@@ -106,5 +106,12 @@ describe('HTTP contract infrastructure', () => {
 
     expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
     expect(response.headers['access-control-allow-credentials']).toBe('true');
+
+    const rejected = await request(app.getHttpServer())
+      .options('/api/v1/ok')
+      .set('Origin', 'https://untrusted.example')
+      .set('Access-Control-Request-Method', 'POST')
+      .expect(204);
+    expect(rejected.headers['access-control-allow-origin']).toBeUndefined();
   });
 });

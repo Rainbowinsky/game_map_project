@@ -87,6 +87,7 @@ export function EditorPage() {
     camera: { x: 0, y: 0, zoom: 1 },
     pointerWorld: null,
     fps: 0,
+    visibleObjectCount: 0,
   });
   const onCanvasReady = useCallback((handle: PixiCanvasHandle) => {
     canvasHandle.current = handle;
@@ -380,9 +381,16 @@ export function EditorPage() {
           ZOOM {Math.round(telemetry.camera.zoom * 100)}%
         </span>
         <i />
-        <span>{telemetry.fps || '—'} FPS</span>
+        <span data-testid="renderer-fps">{telemetry.fps || '—'} FPS</span>
         <i />
-        <span>{objectCount} 个对象</span>
+        <span data-testid="visible-object-count">
+          {telemetry.visibleObjectCount.toLocaleString()} / {objectCount.toLocaleString()}{' '}
+          个可见对象
+        </span>
+        <i />
+        <span data-testid="pending-operation-count">
+          {autosave.snapshot.pendingOperations} 个待保存操作
+        </span>
         <i />
         <span>{saveLabels[autosave.snapshot.status]}</span>
         <span className="editor-status__schema">SCHEMA V{document.schemaVersion}</span>

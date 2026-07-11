@@ -174,10 +174,10 @@ export class AutosaveCoordinator {
       this.scheduleRetry();
       return;
     }
-    const batch = await this.journal.beginBatch();
-    if (!batch) return;
-    this.setSnapshot('saving', null);
     try {
+      const batch = await this.journal.beginBatch();
+      if (!batch) return;
+      this.setSnapshot('saving', null);
       const response = await this.options.save({
         baseRevision: batch.baseRevision,
         clientMutationId: batch.mutationId,
