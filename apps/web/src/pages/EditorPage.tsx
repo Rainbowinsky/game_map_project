@@ -29,6 +29,7 @@ import {
   moveSelectionInStack,
   selectedObjects,
 } from '../editor/object-actions.js';
+import { useEditorAutosave } from '../editor/autosave/use-editor-autosave.js';
 
 const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
   [
@@ -37,13 +38,21 @@ const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: strin
     { id: 'stamp', icon: 'stamp', label: '图章', key: 'S' },
   ];
 
+const saveLabels = {
+  saved: '已保存',
+  dirty: '有未保存更改',
+  saving: '正在保存',
+  offline: '离线，已保存在本机',
+  error: '保存失败，将重试',
+  conflict: '版本冲突',
+} as const;
+
 export function EditorPage() {
   const { mapId = '' } = useParams();
   const session = useSessionStore((state) => state.session);
   const document = useMapStore((state) => state.document);
   const objectCount = useMapStore((state) => Object.keys(state.objectsById).length);
   const clearMap = useMapStore((state) => state.clear);
-  const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
   const tool = useEditorStore((state) => state.tool);
   const activeStampAssetId = useEditorStore((state) => state.activeStampAssetId);
   const setTool = useEditorStore((state) => state.setTool);
@@ -65,6 +74,7 @@ export function EditorPage() {
     commandManager.getSnapshot,
     commandManager.getSnapshot,
   );
+  const autosave = useEditorAutosave({ document, session, commandManager });
   const [telemetry, setTelemetry] = useState<CanvasTelemetry>({
     camera: { x: 0, y: 0, zoom: 1 },
     pointerWorld: null,
@@ -86,16 +96,8 @@ export function EditorPage() {
     // effect; on route changes, stale document state still clears immediately.
     if (useMapStore.getState().document?.id !== mapId) clearMap();
     commandManager.clear();
-    setSaveStatus('saved');
     return clearMap;
-  }, [mapId, clearMap, commandManager, setSaveStatus]);
-  useEffect(
-    () =>
-      commandManager.patches.subscribe(() => {
-        setSaveStatus('dirty');
-      }),
-    [commandManager, setSaveStatus],
-  );
+  }, [mapId, clearMap, commandManager]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (handleHistoryShortcut(event, commandManager)) return;
@@ -149,7 +151,14 @@ export function EditorPage() {
     >
       <header className="editor-topbar">
         <Brand compact />
-        <Link className="editor-back" to="/" aria-label="返回地图室">
+        <Link
+          className="editor-back"
+          to="/"
+          aria-label="返回地图室"
+          onClick={(event) => {
+            if (!autosave.confirmNavigation()) event.preventDefault();
+          }}
+        >
           <Icon name="back" />
         </Link>
         <div className="editor-title">
@@ -172,10 +181,16 @@ export function EditorPage() {
             ↷
           </button>
         </div>
-        <div className="editor-save">
+        <button
+          className={`editor-save editor-save--${autosave.snapshot.status}`}
+          data-testid="save-status"
+          onClick={autosave.retrySave}
+          disabled={!['offline', 'error'].includes(autosave.snapshot.status)}
+          title={autosave.snapshot.errorMessage ?? undefined}
+        >
           <i />
-          已同步 <span>R{document.revision}</span>
-        </div>
+          {saveLabels[autosave.snapshot.status]} <span>R{document.revision}</span>
+        </button>
         <button className="button button--export" disabled>
           导出
         </button>
@@ -233,6 +248,11 @@ export function EditorPage() {
         {interactionError && (
           <div className="stage-error" role="alert">
             {interactionError}
+          </div>
+        )}
+        {autosave.multiTabWarning && (
+          <div className="stage-warning" role="status">
+            {autosave.multiTabWarning}
           </div>
         )}
         <div className="stage-metadata" aria-hidden="true">
@@ -323,6 +343,8 @@ export function EditorPage() {
         <span>{telemetry.fps || '—'} FPS</span>
         <i />
         <span>{objectCount} 个对象</span>
+        <i />
+        <span>{saveLabels[autosave.snapshot.status]}</span>
         <span className="editor-status__schema">SCHEMA V{document.schemaVersion}</span>
       </footer>
       <div className="minimum-size">
@@ -330,6 +352,42 @@ export function EditorPage() {
         <h2>需要更宽阔的制图台</h2>
         <p>编辑器最低需要 980 × 620 的窗口空间。放大窗口后即可继续。</p>
       </div>
+      {(autosave.initializing || autosave.recoveryPrompt) && (
+        <div className="recovery-backdrop" role="presentation">
+          <section
+            className="recovery-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recovery-title"
+          >
+            <p className="kicker">LOCAL RECOVERY</p>
+            <h2 id="recovery-title">
+              {autosave.initializing ? '正在检查本机更改' : '发现未提交的地图更改'}
+            </h2>
+            <p>
+              {autosave.initializing
+                ? '正在核对 IndexedDB 日志与服务端 revision…'
+                : autosave.recoveryPrompt?.message}
+            </p>
+            {!autosave.initializing && autosave.recoveryPrompt && (
+              <div>
+                {autosave.recoveryPrompt.kind === 'recoverable' ? (
+                  <button className="button button--primary" onClick={autosave.recover}>
+                    恢复更改
+                  </button>
+                ) : (
+                  <button className="button" onClick={autosave.retryRecovery}>
+                    重试检查
+                  </button>
+                )}
+                <button className="button recovery-discard" onClick={() => void autosave.discard()}>
+                  丢弃本机日志
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }

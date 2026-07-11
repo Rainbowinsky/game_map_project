@@ -21,6 +21,7 @@ export interface MapState {
   chunkObjectIds: Record<string, string[]>;
   hydrate: (document: MapDocument, chunks: MapChunkPayload[]) => void;
   applyPatches: (patches: readonly DomainPatch[]) => void;
+  confirmRevision: (revision: number, updatedAt: string) => void;
   clear: () => void;
 }
 
@@ -149,6 +150,14 @@ export const useMapStore: UseBoundStore<StoreApi<MapState>> = create<MapState>()
           memberIds.push(object.id);
           state.chunkObjectIds[key] = memberIds;
         }
+      });
+    },
+    confirmRevision: (revision, updatedAt) => {
+      set((state) => {
+        if (!state.document) throw new Error('Cannot confirm a revision without a loaded map.');
+        if (revision < state.document.revision) return;
+        state.document.revision = revision;
+        state.document.updatedAt = updatedAt;
       });
     },
     clear: () => set(emptyState()),

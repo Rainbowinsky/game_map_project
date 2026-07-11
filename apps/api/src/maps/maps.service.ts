@@ -681,7 +681,7 @@ export class MapsService {
 
   private async requireAsset(tx: Transaction, actorId: string, assetId: string): Promise<void> {
     const asset = await tx.asset.findFirst({
-      where: { id: assetId, ownerId: actorId },
+      where: { id: assetId, OR: [{ ownerId: actorId }, { ownerId: null }] },
       select: { id: true },
     });
     if (!asset) throw new AppError('RESOURCE_NOT_FOUND', 'Resource was not found.', 404);

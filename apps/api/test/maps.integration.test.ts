@@ -89,9 +89,9 @@ describe('P4 map APIs', () => {
     assetId = (
       await prisma.asset.create({
         data: {
-          ownerId: author.user.id,
+          ownerId: null,
           kind: 'STAMP',
-          displayName: 'Town',
+          displayName: 'Built-in Town',
           relativePath: 'stamps/town.svg',
           mimeType: 'image/svg+xml',
           extension: 'svg',

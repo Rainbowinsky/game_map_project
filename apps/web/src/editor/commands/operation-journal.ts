@@ -2,7 +2,7 @@ import type { MapOperation } from '@fantasy-map/map-model';
 
 import type { PatchBus, PatchEvent } from './patch-bus.js';
 
-/** Persistence boundary implemented by the P10 autosave/recovery layer. */
+/** Persistence boundary implemented by DurableOperationJournal. */
 export interface OperationJournal {
   append(entry: {
     readonly source: PatchEvent['source'];

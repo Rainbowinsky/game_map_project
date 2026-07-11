@@ -11,6 +11,10 @@ import {
   mapChunkPayloadSchema,
   mapChunkDescriptorSchema,
   mapDocumentSchema,
+  applyOperationsRequestSchema,
+  applyOperationsResponseSchema,
+  type ApplyOperationsRequest,
+  type ApplyOperationsResponse,
   type MapChunkPayload,
   type MapDocument,
 } from '@fantasy-map/map-model';
@@ -141,6 +145,20 @@ export const api = {
       `/maps/${mapId}/chunks/${coordinate.x}/${coordinate.y}`,
       mapChunkPayloadSchema,
       {},
+      accessToken,
+    ),
+  applyOperations: (
+    accessToken: string,
+    mapId: string,
+    input: ApplyOperationsRequest,
+  ): Promise<ApplyOperationsResponse> =>
+    apiRequest(
+      `/maps/${mapId}/operations`,
+      applyOperationsResponseSchema,
+      {
+        method: 'POST',
+        body: JSON.stringify(applyOperationsRequestSchema.parse(input)),
+      },
       accessToken,
     ),
 };

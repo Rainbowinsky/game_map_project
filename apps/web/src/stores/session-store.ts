@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { authResponseSchema, type AuthResponse } from '@fantasy-map/validation';
 import { z } from 'zod';
 
+import { IndexedDbRecoveryPersistence } from '../editor/autosave/recovery-store.js';
+
 const storageKey = 'atlas-session-v1';
 
 const storedSessionSchema = z
@@ -81,7 +83,7 @@ interface SessionState {
   clearSession: () => void;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
   session: readSession(),
   setSession: (session) => {
     const validated = authResponseSchema.parse(session);
@@ -89,7 +91,9 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ session: validated });
   },
   clearSession: () => {
+    const ownerId = get().session?.user.id;
     sessionStorage.removeItem(storageKey);
     set({ session: null });
+    if (ownerId) void new IndexedDbRecoveryPersistence().deleteOwner(ownerId);
   },
 }));

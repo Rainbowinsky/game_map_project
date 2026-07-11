@@ -1001,8 +1001,16 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0;
+  border: 0;
   color: #858b7f;
+  background: transparent;
   font-size: 0.62rem;
+  cursor: pointer;
+}
+.editor-save:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .editor-save i {
   width: 0.38rem;
@@ -1014,6 +1022,19 @@ svg {
 .editor-save span {
   padding-left: 0.5rem;
   border-left: 1px solid rgb(255 255 255 / 9%);
+}
+.editor-save--dirty i,
+.editor-save--saving i {
+  background: #c1a56e;
+}
+.editor-save--saving i {
+  animation: save-pulse 1s ease-in-out infinite;
+}
+.editor-save--offline i,
+.editor-save--error i,
+.editor-save--conflict i {
+  background: #bd7965;
+  box-shadow: 0 0 0 3px rgb(189 121 101 / 12%);
 }
 .button--export {
   min-height: 2rem;
@@ -1333,6 +1354,19 @@ svg {
   font-size: 0.58rem;
   transform: translateX(-50%);
   animation: popover-in 0.22s var(--ease) both;
+}
+.stage-warning {
+  position: absolute;
+  z-index: 4;
+  top: 3.6rem;
+  left: 50%;
+  max-width: min(32rem, calc(100% - 10rem));
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgb(192 165 105 / 30%);
+  color: #d0bd91;
+  background: rgb(55 49 33 / 88%);
+  font-size: 0.55rem;
+  transform: translateX(-50%);
 }
 .stage-empty {
   position: absolute;
@@ -1867,6 +1901,52 @@ svg {
 }
 .minimum-size {
   display: none;
+}
+.recovery-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(13 15 12 / 76%);
+  backdrop-filter: blur(6px);
+}
+.recovery-dialog {
+  width: min(30rem, calc(100vw - 3rem));
+  padding: 1.8rem;
+  border: 1px solid rgb(194 204 182 / 13%);
+  color: #c8cec2;
+  background: #272c24;
+  box-shadow: 0 28px 80px rgb(0 0 0 / 42%);
+  animation: dialog-in 0.3s var(--ease) both;
+}
+.recovery-dialog h2 {
+  margin: 0.5rem 0 0.6rem;
+  font: 400 1.35rem var(--serif);
+}
+.recovery-dialog > p:not(.kicker) {
+  margin: 0;
+  color: #858d80;
+  font-size: 0.65rem;
+  line-height: 1.7;
+}
+.recovery-dialog > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 1.25rem;
+}
+.recovery-discard {
+  border: 1px solid rgb(184 114 91 / 26%);
+  color: #c18e7d;
+  background: transparent;
+}
+
+@keyframes save-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.75);
+  }
 }
 
 @keyframes route-in {

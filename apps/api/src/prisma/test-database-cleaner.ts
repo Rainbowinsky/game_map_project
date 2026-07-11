@@ -23,19 +23,21 @@ export function assertSafeTestDatabaseUrl(databaseUrl: string): void {
 export async function cleanTestDatabase(prisma: PrismaService, databaseUrl: string): Promise<void> {
   assertSafeTestDatabaseUrl(databaseUrl);
 
-  await prisma.$transaction([
-    prisma.operationReceipt.deleteMany(),
-    prisma.exportTask.deleteMany(),
-    prisma.mapVersion.deleteMany(),
-    prisma.location.deleteMany(),
-    prisma.mapObject.deleteMany(),
-    prisma.mapChunk.deleteMany(),
-    prisma.mapLayer.deleteMany(),
-    prisma.mapDocument.deleteMany(),
-    prisma.map.deleteMany(),
-    prisma.project.deleteMany(),
-    prisma.asset.deleteMany(),
-    prisma.assetCategory.deleteMany(),
-    prisma.user.deleteMany(),
-  ]);
+  // Prisma's MariaDB adapter can exhaust its transaction-acquisition window
+  // when array transactions are started during application bootstrap. This is
+  // an isolated, name-guarded test database, so deterministic FK-order cleanup
+  // is safer and more portable than an all-or-nothing cleanup transaction.
+  await prisma.operationReceipt.deleteMany();
+  await prisma.exportTask.deleteMany();
+  await prisma.mapVersion.deleteMany();
+  await prisma.location.deleteMany();
+  await prisma.mapObject.deleteMany();
+  await prisma.mapChunk.deleteMany();
+  await prisma.mapLayer.deleteMany();
+  await prisma.mapDocument.deleteMany();
+  await prisma.map.deleteMany();
+  await prisma.project.deleteMany();
+  await prisma.asset.deleteMany();
+  await prisma.assetCategory.deleteMany();
+  await prisma.user.deleteMany();
 }

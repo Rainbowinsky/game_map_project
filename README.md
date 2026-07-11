@@ -2,9 +2,9 @@
 
 面向小说作者、游戏策划、跑团主持人和世界观创作者的 Web 端 2D 世界地图编辑器。
 
-当前状态：第一阶段 P0-P9 已完成。项目已具备认证与所有权隔离、项目/地图/图层/Chunk/操作 API、桌面编辑器、Pixi 相机与渲染、Command 撤销重做、图层编辑，以及原创图章的放置、多选和变换闭环。
+当前状态：第一阶段 P0-P10 已完成。项目已具备认证与所有权隔离、项目/地图/图层/Chunk/操作 API、桌面编辑器、Pixi 相机与渲染、Command 撤销重做、图层编辑、原创图章的放置/多选/变换，以及自动保存和崩溃恢复闭环。
 
-尚未完成：P10 自动保存与崩溃恢复、P11 PNG 导出、P12 性能安全收口。当前编辑操作会进入内存 Command 历史和 operation journal 边界，但刷新前不会自动持久化到服务端。
+尚未完成：P11 PNG 导出、P12 性能安全收口。
 
 ## 已实现能力
 
@@ -17,6 +17,8 @@
 - 原创山峰、树木、城镇 SVG 图章，支持点击或 HTML5 拖放到画布；新图章会按当前 zoom 自动获得稳定、可操作的屏幕尺寸
 - 点击选择、Shift 多选、框选、移动、共同 bounds 缩放、旋转、复制粘贴、删除和前后移
 - Pixi 增量对象投影、共享 Texture 生命周期和视口外对象裁剪
+- 800 ms 防抖、5 s 最大等待的串行自动保存，网络失败指数退避，409 进入冲突状态
+- IndexedDB 先写日志、幂等 mutation 恢复、刷新恢复对话框、离开保护和多标签编辑提醒
 
 ## 环境要求
 
@@ -34,6 +36,8 @@ pnpm dev
 ```
 
 默认地址：Web `http://127.0.0.1:5173`，API 健康检查 `http://127.0.0.1:3000/api/v1/health`。API 启动时会验证环境并连接数据库；数据库不可用时明确失败。
+
+从 P9 或更早版本升级时请重新执行 `pnpm --filter @fantasy-map/api prisma:seed`，以写入三枚 `ownerId = null` 的内置 SVG 图章记录；seed 使用 upsert，可安全重复执行。
 
 ## MySQL 开发数据库
 
@@ -117,5 +121,6 @@ CI 使用 MySQL 8.0 独立测试库执行认证、所有权和地图操作集成
 - [P7 Command 与历史内核](./docs/phase-1/p7-implementation-report.md)
 - [P8 图层编辑闭环](./docs/phase-1/p8-implementation-report.md)
 - [P9 图章、选择与变换](./docs/phase-1/p9-implementation-report.md)
+- [P10 自动保存与崩溃恢复](./docs/phase-1/p10-implementation-report.md)
 
-下一步按实施计划进入 P10：自动保存、revision 冲突处理与 IndexedDB 崩溃恢复。
+下一步按实施计划进入 P11：基础 PNG 导出。
