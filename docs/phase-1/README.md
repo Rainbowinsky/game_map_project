@@ -1,6 +1,6 @@
 # 第一阶段设计文档索引
 
-状态：P0 工具链/workspace 与 P1 共享模型/数学内核已经完成，下一工作包为 P2。
+状态：P0-P2 已完成；P2 migration 已在本机 MySQL 8.0 的独立开发库和测试空库成功应用。
 
 本目录是“基础编辑器 MVP”的实施基线：
 
@@ -9,6 +9,7 @@
 - [data-and-api.md](./data-and-api.md)：共享 TypeScript/Zod 模型、Prisma 数据模型、REST API 契约、错误与并发约定。
 - [implementation-plan.md](./implementation-plan.md)：工作包、依赖、验证门禁、验收矩阵及明确延期项。
 - [p1-implementation-report.md](./p1-implementation-report.md)：P1 完成内容、设计取舍、验证结果与下一步。
+- [p2-implementation-report.md](./p2-implementation-report.md)：P2 数据库/API/存储基础设施、验证结果与数据库待办。
 
 ## 第一阶段范围
 

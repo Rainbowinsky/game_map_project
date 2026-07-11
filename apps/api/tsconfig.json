@@ -7,5 +7,5 @@
     "moduleResolution": "NodeNext",
     "useDefineForClassFields": false
   },
-  "include": ["src/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts", "vitest.config.ts"]
 }

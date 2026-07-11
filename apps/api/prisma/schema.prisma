@@ -1,0 +1,267 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum AssetKind {
+  STAMP
+  TEXTURE
+  IMAGE
+  THUMBNAIL
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Char(36)
+  email        String   @unique @db.VarChar(191)
+  passwordHash String   @db.VarChar(255)
+  displayName  String   @db.VarChar(100)
+  createdAt    DateTime @default(now()) @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @db.DateTime(3)
+
+  projects        Project[]
+  assets          Asset[]
+  assetCategories AssetCategory[]
+}
+
+model Project {
+  id          String   @id @default(uuid()) @db.Char(36)
+  ownerId     String   @db.Char(36)
+  name        String   @db.VarChar(120)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @db.DateTime(3)
+
+  owner User  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  maps  Map[]
+
+  @@index([ownerId, updatedAt])
+}
+
+model Map {
+  id        String   @id @default(uuid()) @db.Char(36)
+  projectId String   @db.Char(36)
+  name      String   @db.VarChar(120)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  document          MapDocument?
+  layers            MapLayer[]
+  chunks            MapChunk[]
+  objects           MapObject[]
+  locations         Location[]
+  versions          MapVersion[]
+  exportTasks       ExportTask[]
+  operationReceipts OperationReceipt[]
+
+  @@index([projectId, updatedAt])
+}
+
+model MapDocument {
+  id            String   @id @default(uuid()) @db.Char(36)
+  mapId         String   @unique @db.Char(36)
+  schemaVersion Int      @default(1)
+  width         Int
+  height        Int
+  themeId       String   @db.VarChar(100)
+  background    Json
+  settings      Json
+  revision      Int      @default(0)
+  createdAt     DateTime @default(now()) @db.DateTime(3)
+  updatedAt     DateTime @updatedAt @db.DateTime(3)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+}
+
+model MapLayer {
+  id        String   @id @default(uuid()) @db.Char(36)
+  mapId     String   @db.Char(36)
+  parentId  String?  @db.Char(36)
+  name      String   @db.VarChar(120)
+  type      String   @db.VarChar(32)
+  sortOrder Int
+  visible   Boolean  @default(true)
+  locked    Boolean  @default(false)
+  opacity   Float    @default(1)
+  blendMode String   @default("normal") @db.VarChar(24)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  map      Map        @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  parent   MapLayer?  @relation("LayerTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children MapLayer[] @relation("LayerTree")
+  objects  MapObject[]
+
+  @@index([mapId, parentId, sortOrder])
+}
+
+model MapChunk {
+  id          String   @id @default(uuid()) @db.Char(36)
+  mapId       String   @db.Char(36)
+  x           Int
+  y           Int
+  revision    Int      @default(0)
+  objectCount Int      @default(0)
+  createdAt   DateTime @default(now()) @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @db.DateTime(3)
+
+  map     Map         @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  objects MapObject[]
+
+  @@unique([mapId, x, y])
+  @@index([mapId, updatedAt])
+}
+
+model MapObject {
+  id        String   @id @db.Char(36)
+  mapId     String   @db.Char(36)
+  layerId   String   @db.Char(36)
+  chunkId   String   @db.Char(36)
+  type      String   @db.VarChar(32)
+  name      String?  @db.VarChar(120)
+  x         Float
+  y         Float
+  rotation  Float    @default(0)
+  scaleX    Float    @default(1)
+  scaleY    Float    @default(1)
+  zIndex    Int      @default(0)
+  visible   Boolean  @default(true)
+  locked    Boolean  @default(false)
+  opacity   Float    @default(1)
+  payload   Json
+  metadata  Json
+  revision  Int      @default(0)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  map   Map      @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  layer MapLayer @relation(fields: [layerId], references: [id], onDelete: Restrict)
+  chunk MapChunk @relation(fields: [chunkId], references: [id], onDelete: Restrict)
+
+  @@index([mapId, chunkId, layerId])
+  @@index([layerId, zIndex])
+  @@index([mapId, type])
+}
+
+model Location {
+  id           String   @id @default(uuid()) @db.Char(36)
+  mapId        String   @db.Char(36)
+  name         String   @db.VarChar(120)
+  type         String   @db.VarChar(50)
+  x            Float
+  y            Float
+  summary      String?  @db.Text
+  description  String?  @db.LongText
+  regionId     String?  @db.Char(36)
+  iconAssetId  String?  @db.Char(36)
+  tags         Json
+  customFields Json
+  minZoom      Float?
+  maxZoom      Float?
+  createdAt    DateTime @default(now()) @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @db.DateTime(3)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@index([mapId, type])
+}
+
+model AssetCategory {
+  id        String   @id @default(uuid()) @db.Char(36)
+  ownerId   String?  @db.Char(36)
+  name      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  owner  User?   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  assets Asset[]
+
+  @@index([ownerId, name])
+}
+
+model Asset {
+  id            String    @id @default(uuid()) @db.Char(36)
+  ownerId       String?   @db.Char(36)
+  categoryId    String?   @db.Char(36)
+  kind          AssetKind
+  displayName   String    @db.VarChar(120)
+  relativePath  String    @db.VarChar(500)
+  thumbnailPath String?   @db.VarChar(500)
+  mimeType      String    @db.VarChar(100)
+  extension     String    @db.VarChar(16)
+  byteSize      BigInt
+  width         Int?
+  height        Int?
+  sha256        String    @db.Char(64)
+  metadata      Json
+  createdAt     DateTime  @default(now()) @db.DateTime(3)
+  updatedAt     DateTime  @updatedAt @db.DateTime(3)
+
+  owner    User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  category AssetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, kind, createdAt])
+  @@index([sha256])
+}
+
+model MapVersion {
+  id             String   @id @default(uuid()) @db.Char(36)
+  mapId          String   @db.Char(36)
+  number         Int
+  sourceRevision Int
+  label          String?  @db.VarChar(120)
+  snapshotJson   Json?
+  snapshotPath   String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@unique([mapId, number])
+  @@index([mapId, createdAt])
+}
+
+model ExportTask {
+  id           String       @id @default(uuid()) @db.Char(36)
+  mapId        String       @db.Char(36)
+  status       ExportStatus @default(PENDING)
+  format       String       @db.VarChar(16)
+  options      Json
+  progress     Int          @default(0)
+  outputPath   String?      @db.VarChar(500)
+  errorCode    String?      @db.VarChar(64)
+  errorMessage String?      @db.VarChar(500)
+  createdAt    DateTime     @default(now()) @db.DateTime(3)
+  updatedAt    DateTime     @updatedAt @db.DateTime(3)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@index([mapId, status, createdAt])
+}
+
+model OperationReceipt {
+  id                String   @id @default(uuid()) @db.Char(36)
+  mapId             String   @db.Char(36)
+  clientMutationId  String   @db.Char(36)
+  previousRevision  Int
+  resultingRevision Int
+  response           Json
+  createdAt          DateTime @default(now()) @db.DateTime(3)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+
+  @@unique([mapId, clientMutationId])
+  @@index([createdAt])
+}

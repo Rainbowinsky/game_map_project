@@ -3,5 +3,6 @@ dist
 node_modules
 .pnpm-store
 playwright-report
+apps/api/src/generated/prisma
 pnpm-lock.yaml
 test-results
