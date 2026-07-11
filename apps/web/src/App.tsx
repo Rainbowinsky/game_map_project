@@ -1,22 +1,43 @@
-import { MAP_MODEL_SCHEMA_VERSION } from '@fantasy-map/map-model';
-import { WORKSPACE_NAME } from '@fantasy-map/shared';
-import { healthResponseSchema } from '@fantasy-map/validation';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
-const workspaceStatus = healthResponseSchema.parse({
-  name: WORKSPACE_NAME,
-  status: 'ok',
+const AuthPage = lazy(() =>
+  import('./pages/AuthPage.js').then((module) => ({ default: module.AuthPage })),
+);
+const EditorPage = lazy(() =>
+  import('./pages/EditorPage.js').then((module) => ({ default: module.EditorPage })),
+);
+const ProjectsPage = lazy(() =>
+  import('./pages/ProjectsPage.js').then((module) => ({ default: module.ProjectsPage })),
+);
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { refetchOnWindowFocus: false, retry: 1 },
+    mutations: { retry: false },
+  },
 });
 
 export function App() {
   return (
-    <main className="app-shell">
-      <p className="eyebrow">Phase 1 · Authentication</p>
-      <h1>{workspaceStatus.name}</h1>
-      <p className="status">P3 authentication API is ready</p>
-      <p className="detail">
-        Argon2id registration, constrained JWT access tokens and owner-scoped resource boundaries
-        now protect map model schema v{MAP_MODEL_SCHEMA_VERSION}.
-      </p>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Suspense
+          fallback={
+            <div className="app-boot" aria-label="正在进入地图室">
+              <span />
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/login" element={<AuthPage />} />
+            <Route path="/" element={<ProjectsPage />} />
+            <Route path="/editor/:mapId" element={<EditorPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }

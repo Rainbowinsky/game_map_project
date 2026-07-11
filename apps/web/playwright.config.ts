@@ -13,11 +13,16 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+      },
     },
   ],
   webServer: {
-    command: 'pnpm preview --host 127.0.0.1 --port 4173',
+    command:
+      'node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4173 --configLoader runner',
+    cwd: import.meta.dirname,
     port: 4173,
     reuseExistingServer: !process.env.CI,
   },

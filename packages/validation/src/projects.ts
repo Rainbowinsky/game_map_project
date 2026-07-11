@@ -29,7 +29,37 @@ export const paginationQuerySchema = z
   })
   .strict();
 
+export const mapSummarySchema = z
+  .object({
+    id: z.string().uuid(),
+    name: nonEmptyName,
+    revision: z.number().int().nonnegative(),
+    updatedAt: z.string().datetime({ offset: false }),
+  })
+  .strict();
+
+export const projectResponseSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: nonEmptyName,
+    description: z.string().nullable(),
+    createdAt: z.string().datetime({ offset: false }),
+    updatedAt: z.string().datetime({ offset: false }),
+    maps: z.array(mapSummarySchema),
+  })
+  .strict();
+
+export const projectListResponseSchema = z
+  .object({
+    items: z.array(projectResponseSchema),
+    nextCursor: z.string().uuid().nullable(),
+  })
+  .strict();
+
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
 export type CreateMapRequest = z.infer<typeof createMapRequestSchema>;
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+export type MapSummary = z.infer<typeof mapSummarySchema>;
+export type ProjectResponse = z.infer<typeof projectResponseSchema>;
+export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;

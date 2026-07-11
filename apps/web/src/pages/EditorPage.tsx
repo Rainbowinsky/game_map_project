@@ -1,0 +1,278 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, Navigate, useParams } from 'react-router-dom';
+
+import { Brand } from '../components/Brand.js';
+import { ErrorState } from '../components/ErrorState.js';
+import { Icon } from '../components/Icon.js';
+import { LoadingState } from '../components/LoadingState.js';
+import { loadMapIntoStore } from '../services/map-loader.js';
+import { readableError } from '../services/api-client.js';
+import { useEditorStore, type EditorTool } from '../stores/editor-store.js';
+import { useMapStore } from '../stores/map-store.js';
+import { useSessionStore } from '../stores/session-store.js';
+
+const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
+  [
+    { id: 'select', icon: 'select', label: '选择', key: 'V' },
+    { id: 'pan', icon: 'pan', label: '平移', key: 'H' },
+    { id: 'stamp', icon: 'stamp', label: '图章', key: 'S' },
+  ];
+
+export function EditorPage() {
+  const { mapId = '' } = useParams();
+  const session = useSessionStore((state) => state.session);
+  const document = useMapStore((state) => state.document);
+  const layersById = useMapStore((state) => state.layersById);
+  const layers = useMemo(
+    () => Object.values(layersById).sort((a, b) => b.order - a.order),
+    [layersById],
+  );
+  const objectCount = useMapStore((state) => Object.keys(state.objectsById).length);
+  const clearMap = useMapStore((state) => state.clear);
+  const tool = useEditorStore((state) => state.tool);
+  const setTool = useEditorStore((state) => state.setTool);
+  const leftPanelOpen = useEditorStore((state) => state.leftPanelOpen);
+  const rightPanelOpen = useEditorStore((state) => state.rightPanelOpen);
+  const toggleLeftPanel = useEditorStore((state) => state.toggleLeftPanel);
+  const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
+  const [rightTab, setRightTab] = useState<'layers' | 'properties'>('layers');
+  const query = useQuery({
+    queryKey: ['map-load', mapId],
+    queryFn: () => loadMapIntoStore(session?.accessToken ?? '', mapId),
+    enabled: Boolean(session && mapId),
+    retry: 1,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    clearMap();
+    return clearMap;
+  }, [mapId, clearMap]);
+  if (!session) return <Navigate to="/login" replace />;
+  if (query.isError)
+    return (
+      <main className="editor-error">
+        <Brand />
+        <ErrorState message={readableError(query.error)} onRetry={() => void query.refetch()} />
+      </main>
+    );
+  if (query.isPending || !document) return <LoadingState editor />;
+
+  return (
+    <main
+      className={`editor-shell route-enter ${leftPanelOpen ? '' : 'editor-shell--left-closed'} ${rightPanelOpen ? '' : 'editor-shell--right-closed'}`}
+    >
+      <header className="editor-topbar">
+        <Brand compact />
+        <Link className="editor-back" to="/" aria-label="返回地图室">
+          <Icon name="back" />
+        </Link>
+        <div className="editor-title">
+          <span>{document.projectId.slice(0, 8)}</span>
+          <h1>{document.name}</h1>
+        </div>
+        <div className="editor-topbar__center">
+          <button disabled aria-label="撤销">
+            ↶
+          </button>
+          <button disabled aria-label="重做">
+            ↷
+          </button>
+        </div>
+        <div className="editor-save">
+          <i />
+          已同步 <span>R{document.revision}</span>
+        </div>
+        <button className="button button--export" disabled>
+          导出
+        </button>
+        <button className="avatar avatar--small">{session.user.displayName.slice(0, 1)}</button>
+      </header>
+      <aside
+        className={`editor-assets panel-slide ${leftPanelOpen ? 'is-open' : ''}`}
+        aria-hidden={!leftPanelOpen}
+      >
+        <div className="panel-heading">
+          <div>
+            <p className="kicker">ASSET LIBRARY</p>
+            <h2>素材</h2>
+          </div>
+          <button className="icon-button" onClick={toggleLeftPanel} aria-label="收起素材面板">
+            <Icon name="back" />
+          </button>
+        </div>
+        <label className="panel-search">
+          <Icon name="search" />
+          <input placeholder="搜索图章" disabled />
+        </label>
+        <div className="asset-category">
+          <button className="active">
+            <span className="asset-swatch asset-swatch--mountain">⌁</span>
+            <span>山脉</span>
+            <small>即将开放</small>
+          </button>
+          <button>
+            <span className="asset-swatch asset-swatch--tree">♧</span>
+            <span>森林</span>
+            <small>即将开放</small>
+          </button>
+          <button>
+            <span className="asset-swatch asset-swatch--town">◇</span>
+            <span>城镇</span>
+            <small>即将开放</small>
+          </button>
+        </div>
+        <div className="panel-note">
+          <Icon name="command" />
+          <p>P6 将在这里接入可拖放的地图素材。</p>
+        </div>
+      </aside>
+      {!leftPanelOpen && (
+        <button
+          className="panel-reopen panel-reopen--left"
+          onClick={toggleLeftPanel}
+          aria-label="展开素材面板"
+        >
+          <Icon name="chevron" />
+        </button>
+      )}
+      <nav className="tool-rail" aria-label="编辑工具">
+        {toolInfo.map((item) => (
+          <button
+            className={tool === item.id ? 'active' : ''}
+            key={item.id}
+            onClick={() => setTool(item.id)}
+            aria-label={item.label}
+          >
+            <Icon name={item.icon} />
+            <span>
+              {item.label}
+              <kbd>{item.key}</kbd>
+            </span>
+          </button>
+        ))}
+        <i />
+        <button disabled aria-label="网格">
+          <Icon name="grid" />
+          <span>
+            网格<kbd>G</kbd>
+          </span>
+        </button>
+      </nav>
+      <section className="editor-stage" aria-label="地图工作区">
+        <div className="stage-grain" />
+        <div
+          className="map-board"
+          style={{ '--map-ratio': `${document.width} / ${document.height}` } as React.CSSProperties}
+        >
+          <span className="map-board__label">
+            {document.width.toLocaleString()} × {document.height.toLocaleString()} WORLD UNITS
+          </span>
+          <div className="map-board__coast coast-a" />
+          <div className="map-board__coast coast-b" />
+          <div className="map-board__center">
+            <i />
+            <span>{document.name}</span>
+            <small>空白地图 · 等待第一枚图章</small>
+          </div>
+        </div>
+        <div className="zoom-control">
+          <button aria-label="缩小">
+            <Icon name="minus" />
+          </button>
+          <span>32%</span>
+          <button aria-label="放大">
+            <Icon name="plus" />
+          </button>
+        </div>
+      </section>
+      <aside
+        className={`editor-inspector panel-slide panel-slide--right ${rightPanelOpen ? 'is-open' : ''}`}
+        aria-hidden={!rightPanelOpen}
+      >
+        <div className="inspector-tabs">
+          <button
+            className={rightTab === 'layers' ? 'active' : ''}
+            onClick={() => setRightTab('layers')}
+          >
+            图层
+          </button>
+          <button
+            className={rightTab === 'properties' ? 'active' : ''}
+            onClick={() => setRightTab('properties')}
+          >
+            属性
+          </button>
+          <button className="icon-button" onClick={toggleRightPanel} aria-label="收起属性面板">
+            <Icon name="chevron" />
+          </button>
+        </div>
+        <div key={rightTab} className="tab-content tab-enter">
+          {rightTab === 'layers' ? (
+            <>
+              <div className="layer-actions">
+                <span>{layers.length} 个图层</span>
+                <button disabled>
+                  <Icon name="plus" />
+                  新建
+                </button>
+              </div>
+              <div className="layer-list">
+                {layers.map((layer) => (
+                  <button className="layer-row" key={layer.id}>
+                    <span className="layer-row__drag">⠿</span>
+                    <span className="layer-row__thumb">
+                      <Icon name={layer.type === 'group' ? 'layers' : 'stamp'} />
+                    </span>
+                    <span>
+                      <strong>{layer.name}</strong>
+                      <small>{layer.type.toUpperCase()}</small>
+                    </span>
+                    <i className={layer.visible ? 'visible' : ''} />
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="properties-empty">
+              <span>
+                <Icon name="select" />
+              </span>
+              <h3>尚未选择对象</h3>
+              <p>在画布中选择图章后，属性会在这里展开。</p>
+            </div>
+          )}
+        </div>
+        <div className="inspector-footer">
+          <button>
+            <Icon name="settings" />
+            地图设置
+          </button>
+        </div>
+      </aside>
+      {!rightPanelOpen && (
+        <button
+          className="panel-reopen panel-reopen--right"
+          onClick={toggleRightPanel}
+          aria-label="展开属性面板"
+        >
+          <Icon name="back" />
+        </button>
+      )}
+      <footer className="editor-status">
+        <span>工具：{toolInfo.find((item) => item.id === tool)?.label}</span>
+        <i />
+        <span>X 0&nbsp;&nbsp; Y 0</span>
+        <i />
+        <span>{objectCount} 个对象</span>
+        <span className="editor-status__schema">SCHEMA V{document.schemaVersion}</span>
+      </footer>
+      <div className="minimum-size">
+        <Icon name="map" />
+        <h2>需要更宽阔的制图台</h2>
+        <p>编辑器最低需要 980 × 620 的窗口空间。放大窗口后即可继续。</p>
+      </div>
+    </main>
+  );
+}
