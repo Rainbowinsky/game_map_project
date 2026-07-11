@@ -1,0 +1,36 @@
+{
+  "name": "fantasy-map-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A web-based fantasy map editor for world builders.",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22.15.0 <25",
+    "pnpm": ">=11.7.0 <12"
+  },
+  "scripts": {
+    "build": "pnpm -r --sort run build",
+    "build:packages": "pnpm --filter \"./packages/**\" --sort run build",
+    "dev": "pnpm run build:packages && pnpm --parallel --filter @fantasy-map/api --filter @fantasy-map/web run dev",
+    "dev:api": "pnpm run build:packages && pnpm --filter @fantasy-map/api run dev",
+    "dev:web": "pnpm run build:packages && pnpm --filter @fantasy-map/web run dev",
+    "format": "prettier --write \"**/*.{css,html,js,json,ts,tsx,yaml,yml}\" --ignore-unknown",
+    "format:check": "prettier --check \"**/*.{css,html,js,json,ts,tsx,yaml,yml}\" --ignore-unknown",
+    "lint": "eslint . --max-warnings=0",
+    "test": "pnpm run build:packages && pnpm -r --sort run test",
+    "test:e2e": "pnpm --filter @fantasy-map/web run test:e2e",
+    "typecheck": "pnpm run build:packages && pnpm -r --sort run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@types/node": "^22.15.0",
+    "eslint": "^9.28.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.2.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.34.0"
+  }
+}
