@@ -1,6 +1,6 @@
 # 第一阶段设计文档索引
 
-状态：P0-P2 已完成；P2 migration 已在本机 MySQL 8.0 的独立开发库和测试空库成功应用。
+状态：P0-P3 已完成；认证、当前用户与所有权隔离已通过本机 MySQL 和 CI 配置的集成测试。
 
 本目录是“基础编辑器 MVP”的实施基线：
 
@@ -10,6 +10,7 @@
 - [implementation-plan.md](./implementation-plan.md)：工作包、依赖、验证门禁、验收矩阵及明确延期项。
 - [p1-implementation-report.md](./p1-implementation-report.md)：P1 完成内容、设计取舍、验证结果与下一步。
 - [p2-implementation-report.md](./p2-implementation-report.md)：P2 数据库/API/存储基础设施、验证结果与数据库待办。
+- [p3-implementation-report.md](./p3-implementation-report.md)：P3 密码、JWT、认证 Guard、限流和所有权隔离实现。
 
 ## 第一阶段范围
 

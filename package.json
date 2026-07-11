@@ -19,6 +19,7 @@
     "format:check": "prettier --check \"**/*.{css,html,js,json,ts,tsx,yaml,yml}\" --ignore-unknown",
     "lint": "eslint . --max-warnings=0",
     "test": "pnpm run build:packages && pnpm -r --sort run test",
+    "test:integration": "pnpm run build:packages && pnpm --filter @fantasy-map/api run test:integration",
     "test:e2e": "pnpm --filter @fantasy-map/web run test:e2e",
     "typecheck": "pnpm run build:packages && pnpm -r --sort run typecheck"
   },

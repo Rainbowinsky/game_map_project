@@ -9,3 +9,5 @@ export const healthResponseSchema = z
   .strict();
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+export * from './auth.js';

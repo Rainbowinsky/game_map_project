@@ -9,8 +9,10 @@
   "exclude": [
     "src/**/*.test.ts",
     "src/test/**",
+    "test/**",
     "prisma/**/*.ts",
     "prisma.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
   ]
 }

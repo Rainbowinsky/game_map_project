@@ -12,6 +12,32 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: integration-root-password
+          MYSQL_DATABASE: fantasy_map_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pintegration-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: mysql://root:integration-root-password@127.0.0.1:3306/fantasy_map_test
+      CORS_ORIGINS: http://localhost:5173
+      JWT_SECRET: ci-integration-secret-with-at-least-32-characters
+      JWT_ISSUER: fantasy-map-api-test
+      JWT_AUDIENCE: fantasy-map-web-test
+      JWT_ACCESS_TTL_SECONDS: 900
+      STORAGE_ROOT: ./apps/api/storage-test
+      LOG_LEVEL: error
+      REQUEST_BODY_LIMIT: 1mb
+      RATE_LIMIT_TTL_MS: 60000
+      RATE_LIMIT_LIMIT: 1000
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -30,6 +56,10 @@ jobs:
         run: pnpm typecheck
       - name: Unit tests
         run: pnpm test
+      - name: Apply test database migrations
+        run: pnpm --filter @fantasy-map/api prisma:migrate:deploy
+      - name: API integration tests
+        run: pnpm test:integration
       - name: Build
         run: pnpm build
       - name: Assert server secrets are absent from the Web bundle

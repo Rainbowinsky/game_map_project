@@ -23,6 +23,11 @@ describe('loadAppConfig', () => {
     expect(config.apiPort).toBe(3_100);
     expect(config.corsOrigins).toEqual(['http://localhost:5173', 'https://maps.example.test']);
     expect(config.rateLimit).toEqual({ ttlMs: 30_000, limit: 50 });
+    expect(config).toMatchObject({
+      jwtIssuer: 'fantasy-map-api',
+      jwtAudience: 'fantasy-map-web',
+      jwtAccessTtlSeconds: 900,
+    });
   });
 
   it('fails clearly when required secrets or database configuration are missing', () => {
