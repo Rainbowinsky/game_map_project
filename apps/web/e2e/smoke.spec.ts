@@ -113,6 +113,44 @@ test('opens a recent map and restores the editor route after refresh', async ({ 
   await page.getByRole('link', { name: /灰烬海岸/ }).click();
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();
   await expect(page.getByText('素材', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('pixi-host').locator('canvas')).toHaveCount(1);
+  const canvas = page.getByTestId('pixi-host');
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error('Map canvas has no visible bounds.');
+  await page.mouse.move(bounds.x + bounds.width * 0.7, bounds.y + bounds.height * 0.45);
+  const cameraStatus = page.getByTestId('camera-zoom');
+  await expect(cameraStatus).not.toHaveText('ZOOM 100%');
+  const exactZoomBefore = await cameraStatus.getAttribute('data-camera-zoom');
+  await canvas.dispatchEvent('wheel', {
+    deltaY: -300,
+    clientX: bounds.x + bounds.width * 0.7,
+    clientY: bounds.y + bounds.height * 0.45,
+  });
+  await expect(cameraStatus).not.toHaveAttribute('data-camera-zoom', exactZoomBefore ?? '');
+  await page.getByRole('button', { name: '平移' }).click();
+  await expect(canvas).toHaveClass(/is-pan-tool/);
+  await canvas.dispatchEvent('pointerdown', {
+    button: 0,
+    pointerId: 1,
+    clientX: bounds.x + bounds.width * 0.7,
+    clientY: bounds.y + bounds.height * 0.45,
+  });
+  await expect(canvas).toHaveClass(/is-panning/);
+  await canvas.dispatchEvent('pointermove', {
+    button: 0,
+    pointerId: 1,
+    movementX: -80,
+    movementY: 60,
+    clientX: bounds.x + bounds.width * 0.6,
+    clientY: bounds.y + bounds.height * 0.55,
+  });
+  await canvas.dispatchEvent('pointerup', {
+    button: 0,
+    pointerId: 1,
+    clientX: bounds.x + bounds.width * 0.6,
+    clientY: bounds.y + bounds.height * 0.55,
+  });
+  await expect(canvas).not.toHaveClass(/is-panning/);
   await page.reload();
   await expect(page).toHaveURL(new RegExp(`/editor/${ids.map}$`));
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();

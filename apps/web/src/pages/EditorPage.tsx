@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useParams } from 'react-router-dom';
 
@@ -6,6 +6,11 @@ import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { Icon } from '../components/Icon.js';
 import { LoadingState } from '../components/LoadingState.js';
+import {
+  PixiCanvas,
+  type CanvasTelemetry,
+  type PixiCanvasHandle,
+} from '../components/PixiCanvas.js';
 import { loadMapIntoStore } from '../services/map-loader.js';
 import { readableError } from '../services/api-client.js';
 import { useEditorStore, type EditorTool } from '../stores/editor-store.js';
@@ -37,6 +42,16 @@ export function EditorPage() {
   const toggleLeftPanel = useEditorStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
   const [rightTab, setRightTab] = useState<'layers' | 'properties'>('layers');
+  const canvasHandle = useRef<PixiCanvasHandle | null>(null);
+  const [telemetry, setTelemetry] = useState<CanvasTelemetry>({
+    camera: { x: 0, y: 0, zoom: 1 },
+    pointerWorld: null,
+    fps: 0,
+  });
+  const onCanvasReady = useCallback((handle: PixiCanvasHandle) => {
+    canvasHandle.current = handle;
+  }, []);
+  const onTelemetry = useCallback((next: CanvasTelemetry) => setTelemetry(next), []);
   const query = useQuery({
     queryKey: ['map-load', mapId],
     queryFn: () => loadMapIntoStore(session?.accessToken ?? '', mapId),
@@ -125,7 +140,7 @@ export function EditorPage() {
         </div>
         <div className="panel-note">
           <Icon name="command" />
-          <p>P6 将在这里接入可拖放的地图素材。</p>
+          <p>P9 将在这里接入可拖放的原创地图素材。</p>
         </div>
       </aside>
       {!leftPanelOpen && (
@@ -161,28 +176,38 @@ export function EditorPage() {
         </button>
       </nav>
       <section className="editor-stage" aria-label="地图工作区">
+        <PixiCanvas
+          document={document}
+          panMode={tool === 'pan'}
+          onReady={onCanvasReady}
+          onTelemetry={onTelemetry}
+        />
         <div className="stage-grain" />
-        <div
-          className="map-board"
-          style={{ '--map-ratio': `${document.width} / ${document.height}` } as React.CSSProperties}
-        >
-          <span className="map-board__label">
-            {document.width.toLocaleString()} × {document.height.toLocaleString()} WORLD UNITS
-          </span>
-          <div className="map-board__coast coast-a" />
-          <div className="map-board__coast coast-b" />
-          <div className="map-board__center">
+        <div className="stage-metadata" aria-hidden="true">
+          <span>WORLD EXTENT</span>
+          <strong>
+            {document.width.toLocaleString()} × {document.height.toLocaleString()}
+          </strong>
+        </div>
+        {objectCount === 0 && (
+          <div className="stage-empty" aria-hidden="true">
             <i />
             <span>{document.name}</span>
-            <small>空白地图 · 等待第一枚图章</small>
+            <small>滚轮缩放 · 中键或空格拖动</small>
           </div>
+        )}
+        <div className="stage-fit">
+          <button onClick={() => canvasHandle.current?.fitMap()} aria-label="适应地图">
+            <Icon name="map" />
+            <span>适应地图</span>
+          </button>
         </div>
         <div className="zoom-control">
-          <button aria-label="缩小">
+          <button onClick={() => canvasHandle.current?.zoomOut()} aria-label="缩小">
             <Icon name="minus" />
           </button>
-          <span>32%</span>
-          <button aria-label="放大">
+          <span>{Math.round(telemetry.camera.zoom * 100)}%</span>
+          <button onClick={() => canvasHandle.current?.zoomIn()} aria-label="放大">
             <Icon name="plus" />
           </button>
         </div>
@@ -263,7 +288,16 @@ export function EditorPage() {
       <footer className="editor-status">
         <span>工具：{toolInfo.find((item) => item.id === tool)?.label}</span>
         <i />
-        <span>X 0&nbsp;&nbsp; Y 0</span>
+        <span data-testid="world-coordinates">
+          X {Math.round(telemetry.pointerWorld?.x ?? telemetry.camera.x)}&nbsp;&nbsp; Y{' '}
+          {Math.round(telemetry.pointerWorld?.y ?? telemetry.camera.y)}
+        </span>
+        <i />
+        <span data-testid="camera-zoom" data-camera-zoom={telemetry.camera.zoom}>
+          ZOOM {Math.round(telemetry.camera.zoom * 100)}%
+        </span>
+        <i />
+        <span>{telemetry.fps || '—'} FPS</span>
         <i />
         <span>{objectCount} 个对象</span>
         <span className="editor-status__schema">SCHEMA V{document.schemaVersion}</span>
