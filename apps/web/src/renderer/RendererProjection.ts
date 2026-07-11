@@ -21,7 +21,10 @@ export class RendererProjection {
     for (const [layerId, container] of this.containers) {
       if (!layerIds.has(layerId)) {
         container.removeFromParent();
-        container.destroy({ children: true });
+        // Object sprites are owned by ObjectProjection and may be removed just
+        // after their layer in the same patch batch; never destroy them here.
+        container.removeChildren();
+        container.destroy({ children: false });
         this.containers.delete(layerId);
       }
     }

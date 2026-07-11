@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useParams } from 'react-router-dom';
+import type { MapObject } from '@fantasy-map/map-model';
 
 import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { Icon } from '../components/Icon.js';
 import { LoadingState } from '../components/LoadingState.js';
 import { LayerPanel } from '../components/LayerPanel.js';
+import { ObjectInspector } from '../components/ObjectInspector.js';
+import { StampAssetPanel } from '../components/StampAssetPanel.js';
 import {
   PixiCanvas,
   type CanvasTelemetry,
@@ -20,6 +23,12 @@ import { useSessionStore } from '../stores/session-store.js';
 import { CommandManager } from '../editor/commands/CommandManager.js';
 import { createMapCommandContext } from '../editor/commands/map-command-context.js';
 import { handleHistoryShortcut } from '../editor/commands/shortcuts.js';
+import {
+  deleteSelectedObjects,
+  duplicateObjects,
+  moveSelectionInStack,
+  selectedObjects,
+} from '../editor/object-actions.js';
 
 const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
   [
@@ -36,6 +45,7 @@ export function EditorPage() {
   const clearMap = useMapStore((state) => state.clear);
   const setSaveStatus = useEditorStore((state) => state.setSaveStatus);
   const tool = useEditorStore((state) => state.tool);
+  const activeStampAssetId = useEditorStore((state) => state.activeStampAssetId);
   const setTool = useEditorStore((state) => state.setTool);
   const leftPanelOpen = useEditorStore((state) => state.leftPanelOpen);
   const rightPanelOpen = useEditorStore((state) => state.rightPanelOpen);
@@ -43,6 +53,8 @@ export function EditorPage() {
   const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
   const [rightTab, setRightTab] = useState<'layers' | 'properties'>('layers');
   const canvasHandle = useRef<PixiCanvasHandle | null>(null);
+  const clipboardRef = useRef<readonly MapObject[]>([]);
+  const [interactionError, setInteractionError] = useState<string | null>(null);
   const commandManagerRef = useRef<CommandManager | null>(null);
   if (!commandManagerRef.current) {
     commandManagerRef.current = new CommandManager(createMapCommandContext());
@@ -86,11 +98,41 @@ export function EditorPage() {
   );
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      handleHistoryShortcut(event, commandManager);
+      if (handleHistoryShortcut(event, commandManager)) return;
+      const target = event.target;
+      if (
+        event.isComposing ||
+        (target instanceof HTMLElement &&
+          (target.isContentEditable ||
+            target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            target instanceof HTMLSelectElement))
+      )
+        return;
+      const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (modifier && key === 'c') {
+        clipboardRef.current = selectedObjects().map((object) => structuredClone(object));
+        event.preventDefault();
+      } else if (modifier && key === 'v') {
+        duplicateObjects(commandManager, clipboardRef.current);
+        event.preventDefault();
+      } else if (modifier && key === 'd') {
+        duplicateObjects(commandManager);
+        event.preventDefault();
+      } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (deleteSelectedObjects(commandManager)) event.preventDefault();
+      } else if (event.key === ']') {
+        if (moveSelectionInStack(commandManager, 'forward')) event.preventDefault();
+      } else if (event.key === '[') {
+        if (moveSelectionInStack(commandManager, 'backward')) event.preventDefault();
+      } else if (!modifier && !event.altKey && ['v', 'h', 's'].includes(key)) {
+        setTool(key === 'v' ? 'select' : key === 'h' ? 'pan' : 'stamp');
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commandManager]);
+  }, [commandManager, setTool]);
   if (!session) return <Navigate to="/login" replace />;
   if (query.isError)
     return (
@@ -143,40 +185,7 @@ export function EditorPage() {
         className={`editor-assets panel-slide ${leftPanelOpen ? 'is-open' : ''}`}
         aria-hidden={!leftPanelOpen}
       >
-        <div className="panel-heading">
-          <div>
-            <p className="kicker">ASSET LIBRARY</p>
-            <h2>素材</h2>
-          </div>
-          <button className="icon-button" onClick={toggleLeftPanel} aria-label="收起素材面板">
-            <Icon name="back" />
-          </button>
-        </div>
-        <label className="panel-search">
-          <Icon name="search" />
-          <input placeholder="搜索图章" disabled />
-        </label>
-        <div className="asset-category">
-          <button className="active">
-            <span className="asset-swatch asset-swatch--mountain">⌁</span>
-            <span>山脉</span>
-            <small>即将开放</small>
-          </button>
-          <button>
-            <span className="asset-swatch asset-swatch--tree">♧</span>
-            <span>森林</span>
-            <small>即将开放</small>
-          </button>
-          <button>
-            <span className="asset-swatch asset-swatch--town">◇</span>
-            <span>城镇</span>
-            <small>即将开放</small>
-          </button>
-        </div>
-        <div className="panel-note">
-          <Icon name="command" />
-          <p>P9 将在这里接入可拖放的原创地图素材。</p>
-        </div>
+        <StampAssetPanel onClose={toggleLeftPanel} />
       </aside>
       {!leftPanelOpen && (
         <button
@@ -213,12 +222,19 @@ export function EditorPage() {
       <section className="editor-stage" aria-label="地图工作区">
         <PixiCanvas
           document={document}
-          panMode={tool === 'pan'}
-          patchBus={commandManager.patches}
+          tool={tool}
+          activeStampAssetId={activeStampAssetId}
+          commandManager={commandManager}
           onReady={onCanvasReady}
           onTelemetry={onTelemetry}
+          onInteractionError={setInteractionError}
         />
         <div className="stage-grain" />
+        {interactionError && (
+          <div className="stage-error" role="alert">
+            {interactionError}
+          </div>
+        )}
         <div className="stage-metadata" aria-hidden="true">
           <span>WORLD EXTENT</span>
           <strong>
@@ -273,13 +289,7 @@ export function EditorPage() {
           {rightTab === 'layers' ? (
             <LayerPanel commandManager={commandManager} />
           ) : (
-            <div className="properties-empty">
-              <span>
-                <Icon name="select" />
-              </span>
-              <h3>尚未选择对象</h3>
-              <p>在画布中选择图章后，属性会在这里展开。</p>
-            </div>
+            <ObjectInspector commandManager={commandManager} />
           )}
         </div>
         <div className="inspector-footer">

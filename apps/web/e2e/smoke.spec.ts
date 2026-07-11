@@ -112,7 +112,7 @@ test('opens a recent map and restores the editor route after refresh', async ({ 
   await expect(page.getByRole('heading', { name: '地图室' })).toBeVisible();
   await page.getByRole('link', { name: /灰烬海岸/ }).click();
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();
-  await expect(page.getByText('素材', { exact: true })).toBeVisible();
+  await expect(page.getByText('图章素材', { exact: true })).toBeVisible();
   await expect(page.getByTestId('pixi-host').locator('canvas')).toHaveCount(1);
   const canvas = page.getByTestId('pixi-host');
   const bounds = await canvas.boundingBox();
@@ -154,6 +154,55 @@ test('opens a recent map and restores the editor route after refresh', async ({ 
   await page.reload();
   await expect(page).toHaveURL(new RegExp(`/editor/${ids.map}$`));
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();
+});
+
+test('places, selects, transforms, duplicates and deletes a stamp', async ({ page }) => {
+  await prepare(page);
+  await page.goto(`/editor/${ids.map}`);
+  await expect(page.getByTestId('pixi-host').locator('canvas')).toHaveCount(1);
+  const canvas = page.getByTestId('pixi-host');
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error('Map canvas has no visible bounds.');
+  const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+
+  await page.getByRole('button', { name: /远峰/ }).click();
+  await canvas.dispatchEvent('pointerdown', {
+    button: 0,
+    pointerId: 2,
+    clientX: point.x,
+    clientY: point.y,
+  });
+  await expect(page.getByText('1 个对象', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '选择' }).click();
+  await canvas.dispatchEvent('pointerdown', {
+    button: 0,
+    pointerId: 3,
+    clientX: point.x,
+    clientY: point.y,
+  });
+  await canvas.dispatchEvent('pointermove', {
+    button: 0,
+    pointerId: 3,
+    clientX: point.x + 60,
+    clientY: point.y + 30,
+  });
+  await canvas.dispatchEvent('pointerup', {
+    button: 0,
+    pointerId: 3,
+    clientX: point.x + 60,
+    clientY: point.y + 30,
+  });
+  await expect(page.getByRole('button', { name: '撤销' })).toBeEnabled();
+
+  await page.getByRole('button', { name: '属性', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '远峰' })).toBeVisible();
+  await page.keyboard.press('Control+d');
+  await expect(page.getByText('2 个对象', { exact: true })).toBeVisible();
+  await page.keyboard.press('Delete');
+  await expect(page.getByText('1 个对象', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '撤销' }).click();
+  await expect(page.getByText('2 个对象', { exact: true })).toBeVisible();
 });
 
 test('creates a project and map through the animated dialog', async ({ page }) => {

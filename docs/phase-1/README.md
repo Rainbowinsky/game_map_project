@@ -1,6 +1,6 @@
 # 第一阶段设计文档索引
 
-状态：P0-P8 已完成；编辑器已具备数据加载、相机、命令历史与图层编辑闭环。
+状态：P0-P9 已完成；编辑器已具备数据加载、相机、命令历史、图层编辑、图章放置、多选与变换闭环。
 
 本目录是“基础编辑器 MVP”的实施基线：
 
@@ -16,6 +16,7 @@
 - [p6-implementation-report.md](./p6-implementation-report.md)：P6 Pixi 生命周期、相机控制与画布验证结果。
 - [p7-implementation-report.md](./p7-implementation-report.md)：P7 Command、历史、PatchBus 与操作日志边界。
 - [p8-implementation-report.md](./p8-implementation-report.md)：P8 图层面板、命令接入、删除策略与渲染投影。
+- [p9-implementation-report.md](./p9-implementation-report.md)：P9 原创图章、资源生命周期、选择、变换与快捷操作。
 
 ## 第一阶段范围
 

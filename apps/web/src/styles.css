@@ -1103,8 +1103,15 @@ svg {
   color: #7d8377;
   background: transparent;
   text-align: left;
-  cursor: not-allowed;
+  cursor: grab;
   transition: background 0.2s;
+}
+.asset-category button:active {
+  cursor: grabbing;
+}
+.asset-category button:hover {
+  color: #d5dbcf;
+  background: rgb(171 184 156 / 5%);
 }
 .asset-category button.active {
   color: #cbd0c5;
@@ -1126,6 +1133,12 @@ svg {
   color: #909c82;
   background: #2c3129;
   font: 1.1rem var(--serif);
+}
+.asset-swatch img {
+  width: 1.65rem;
+  height: 1.65rem;
+  object-fit: contain;
+  filter: saturate(0.72) contrast(1.08);
 }
 .panel-note {
   position: absolute;
@@ -1266,6 +1279,12 @@ svg {
 .pixi-host.is-panning {
   cursor: grabbing;
 }
+.pixi-host.is-stamp-tool {
+  cursor: crosshair;
+}
+.pixi-host.is-transforming {
+  cursor: move;
+}
 .pixi-canvas {
   display: block;
   width: 100%;
@@ -1299,6 +1318,21 @@ svg {
   font-size: 0.56rem;
   font-weight: 500;
   letter-spacing: 0.08em;
+}
+.stage-error {
+  position: absolute;
+  z-index: 4;
+  top: 0.9rem;
+  left: 50%;
+  max-width: min(28rem, calc(100% - 12rem));
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgb(209 146 118 / 35%);
+  color: #e0b29e;
+  background: rgb(64 38 31 / 90%);
+  box-shadow: 0 8px 30px rgb(0 0 0 / 22%);
+  font-size: 0.58rem;
+  transform: translateX(-50%);
+  animation: popover-in 0.22s var(--ease) both;
 }
 .stage-empty {
   position: absolute;
@@ -1681,6 +1715,70 @@ svg {
   color: #555c52;
   font-size: 0.55rem;
   line-height: 1.7;
+}
+.object-properties {
+  padding: 1.15rem 1rem;
+  color: #aeb5a9;
+}
+.object-properties h3 {
+  margin: 0.45rem 0 0.2rem;
+  font: 400 1rem var(--serif);
+}
+.object-properties > p:not(.kicker) {
+  margin: 0;
+  color: #626a5f;
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
+}
+.object-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgb(255 255 255 / 6%);
+}
+.object-fields label {
+  display: grid;
+  gap: 0.3rem;
+  color: #6f776c;
+  font-size: 0.5rem;
+}
+.object-fields input {
+  width: 100%;
+  min-height: 1.85rem;
+  padding: 0 0.45rem;
+  border: 1px solid #41483e;
+  color: #c0c6bb;
+  background: #1b1f1a;
+  font-size: 0.58rem;
+}
+.object-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-top: 1rem;
+}
+.object-action-grid button {
+  min-height: 2rem;
+  border: 1px solid rgb(255 255 255 / 8%);
+  color: #8e9789;
+  background: transparent;
+  font-size: 0.52rem;
+  cursor: pointer;
+}
+.object-action-grid button:hover {
+  color: #d0d6ca;
+  background: rgb(255 255 255 / 4%);
+}
+.object-action-grid button.danger {
+  border-color: rgb(181 111 88 / 25%);
+  color: #bc8876;
+}
+.object-properties .object-hint {
+  margin-top: 0.9rem;
+  line-height: 1.65;
+  letter-spacing: 0;
 }
 .inspector-footer {
   padding: 0.65rem;

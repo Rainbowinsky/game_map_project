@@ -3,10 +3,23 @@ import {
   visibleWorldRect,
   type CameraState,
   type MapDocument,
+  type MapObject,
+  type ObjectTransform,
   type Viewport,
+  type WorldPoint,
+  type WorldRect,
 } from '@fantasy-map/map-model';
 import type { MapLayer } from '@fantasy-map/map-model';
 
+import {
+  objectsIntersectingRect,
+  pickObject,
+  rectsIntersect,
+  selectionBounds,
+  type TransformMode,
+} from '../editor/selection/geometry.js';
+import { AssetRegistry } from './AssetRegistry.js';
+import { ObjectProjection } from './ObjectProjection.js';
 import { RendererProjection } from './RendererProjection.js';
 
 const GRID_LINE_LIMIT = 180;
@@ -30,16 +43,26 @@ export class MapRenderer {
   private readonly mapClipRoot = new Container();
   private readonly layerRoot = new Container();
   private readonly projection = new RendererProjection(this.layerRoot);
+  private readonly assets = new AssetRegistry();
+  private readonly objects = new ObjectProjection(this.projection, this.assets);
   private readonly worldGrid = new Graphics();
   private readonly worldOverlay = new Container();
+  private readonly selectionOverlay = new Graphics();
+  private readonly marqueeOverlay = new Graphics();
   private readonly mapBoundary = new Graphics();
   private readonly screenOverlay = new Container();
   private viewport: Viewport = { width: 1, height: 1 };
   private camera: CameraState = { x: 0, y: 0, zoom: 1 };
   private initialized = false;
   private destroyed = false;
+  private mapObjects: readonly MapObject[] = [];
+  private mapLayers: readonly MapLayer[];
+  private selectedIds: readonly string[] = [];
+  private previewObjects: readonly MapObject[] | null = null;
 
-  constructor(private readonly document: MapDocument) {}
+  constructor(private readonly document: MapDocument) {
+    this.mapLayers = document.layers;
+  }
 
   async mount(host: HTMLElement): Promise<HTMLCanvasElement | null> {
     await this.application.init({
@@ -65,6 +88,7 @@ export class MapRenderer {
     this.application.stage.addChild(this.worldRoot, this.screenOverlay);
     this.worldRoot.addChild(this.mapBackground, this.mapClipRoot, this.mapBoundary);
     this.mapClipRoot.addChild(this.layerRoot, this.worldGrid, this.worldOverlay);
+    this.worldOverlay.addChild(this.selectionOverlay, this.marqueeOverlay);
     this.projection.sync(this.document.layers);
     this.drawStaticScene();
     this.initialized = true;
@@ -90,12 +114,74 @@ export class MapRenderer {
 
   syncLayers(layers: readonly MapLayer[]): void {
     if (this.destroyed) return;
+    this.mapLayers = layers;
     this.projection.sync(layers);
+    this.objects.sync(this.mapObjects);
+  }
+
+  syncObjects(objects: readonly MapObject[]): void {
+    if (this.destroyed) return;
+    this.mapObjects = objects;
+    this.objects.sync(objects);
+    this.drawSelection();
+    this.updateCulling();
+  }
+
+  setSelection(objectIds: readonly string[]): void {
+    this.selectedIds = objectIds;
+    this.drawSelection();
+  }
+
+  previewTransforms(changesById: Readonly<Record<string, ObjectTransform>>): void {
+    this.previewObjects = this.objects.preview(changesById);
+    this.drawSelection();
+  }
+
+  clearPreview(): void {
+    this.previewObjects = null;
+    this.objects.clearPreview();
+    this.drawSelection();
+  }
+
+  showMarquee(rect: WorldRect | null): void {
+    this.marqueeOverlay.clear();
+    if (!rect) return;
+    this.marqueeOverlay
+      .rect(rect.x, rect.y, rect.width, rect.height)
+      .fill({ color: 0xa9b99a, alpha: 0.08 })
+      .stroke({ color: 0xc6d2b8, alpha: 0.9, width: 1 / this.camera.zoom });
+  }
+
+  pick(point: WorldPoint): MapObject | undefined {
+    return pickObject(point, this.mapObjects, this.mapLayers);
+  }
+
+  objectsInRect(rect: WorldRect): string[] {
+    return objectsIntersectingRect(rect, this.mapObjects, this.mapLayers);
+  }
+
+  hitSelectionHandle(point: WorldPoint): TransformMode | null {
+    const bounds = this.currentSelectionBounds();
+    if (!bounds) return null;
+    const tolerance = 12 / this.camera.zoom;
+    const rotate = { x: bounds.x + bounds.width / 2, y: bounds.y - 28 / this.camera.zoom };
+    if (Math.hypot(point.x - rotate.x, point.y - rotate.y) <= tolerance) return 'rotate';
+    const corners = [
+      { x: bounds.x, y: bounds.y },
+      { x: bounds.x + bounds.width, y: bounds.y },
+      { x: bounds.x, y: bounds.y + bounds.height },
+      { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+    ];
+    return corners.some((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) <= tolerance)
+      ? 'scale'
+      : null;
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.objects.destroy();
+    this.assets.destroy();
     if (this.initialized) this.application.destroy(true, { children: true });
   }
 
@@ -132,6 +218,8 @@ export class MapRenderer {
     this.worldRoot.scale.set(zoom);
     this.worldRoot.position.set(width / 2 - x * zoom, height / 2 - y * zoom);
     this.drawGrid();
+    this.updateCulling();
+    this.drawSelection();
   }
 
   private drawGrid(): void {
@@ -178,5 +266,49 @@ export class MapRenderer {
           width: (isMajor ? 1.2 : 0.7) / this.camera.zoom,
         });
     }
+  }
+
+  private currentSelectionBounds(): WorldRect | null {
+    const source = this.previewObjects ?? this.mapObjects;
+    return selectionBounds(source.filter((object) => this.selectedIds.includes(object.id)));
+  }
+
+  private drawSelection(): void {
+    this.selectionOverlay.clear();
+    const bounds = this.currentSelectionBounds();
+    if (!bounds || this.camera.zoom <= 0) return;
+    const line = 1.5 / this.camera.zoom;
+    const handle = 9 / this.camera.zoom;
+    const rotateY = bounds.y - 28 / this.camera.zoom;
+    this.selectionOverlay
+      .rect(bounds.x, bounds.y, bounds.width, bounds.height)
+      .stroke({ color: 0xdce8cf, alpha: 0.95, width: line })
+      .moveTo(bounds.x + bounds.width / 2, bounds.y)
+      .lineTo(bounds.x + bounds.width / 2, rotateY)
+      .stroke({ color: 0xdce8cf, alpha: 0.8, width: line });
+    for (const [x, y] of [
+      [bounds.x, bounds.y],
+      [bounds.x + bounds.width, bounds.y],
+      [bounds.x, bounds.y + bounds.height],
+      [bounds.x + bounds.width, bounds.y + bounds.height],
+    ] as const) {
+      this.selectionOverlay
+        .rect(x - handle / 2, y - handle / 2, handle, handle)
+        .fill({ color: 0x263024 })
+        .stroke({ color: 0xe6efda, width: line });
+    }
+    this.selectionOverlay
+      .circle(bounds.x + bounds.width / 2, rotateY, handle / 2)
+      .fill({ color: 0x9ead91 })
+      .stroke({ color: 0xf0f5e9, width: line });
+  }
+
+  private updateCulling(): void {
+    if (!this.initialized) return;
+    const visible = visibleWorldRect(this.camera, this.viewport);
+    this.objects.setVisibleRect(visible);
+    // Hide overlays when the selected group is entirely outside the viewport.
+    const selected = this.currentSelectionBounds();
+    this.selectionOverlay.visible = selected === null || rectsIntersect(visible, selected);
   }
 }
