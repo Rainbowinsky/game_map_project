@@ -18,6 +18,7 @@
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fantasy-map/map-model": "workspace:*",
     "@fantasy-map/shared": "workspace:*",
     "@fantasy-map/validation": "workspace:*",
     "@nestjs/common": "^11.1.0",

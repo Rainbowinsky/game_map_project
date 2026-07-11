@@ -11,3 +11,4 @@ export const healthResponseSchema = z
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export * from './auth.js';
+export * from './projects.js';

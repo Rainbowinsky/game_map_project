@@ -13,6 +13,7 @@ import { RequestIdMiddleware } from './common/request/request-id.js';
 import { APP_CONFIG, AppConfigModule, type AppConfig } from './config/app-config.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { OwnershipModule } from './ownership/ownership.module.js';
+import { MapsModule } from './maps/maps.module.js';
 import { StorageModule } from './storage/storage.module.js';
 
 @Module({
@@ -21,6 +22,7 @@ import { StorageModule } from './storage/storage.module.js';
     AuthModule,
     PrismaModule,
     OwnershipModule,
+    MapsModule,
     StorageModule,
     ThrottlerModule.forRootAsync({
       imports: [AppConfigModule],

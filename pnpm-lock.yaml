@@ -38,6 +38,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@fantasy-map/map-model':
+        specifier: workspace:*
+        version: link:../../packages/map-model
       '@fantasy-map/shared':
         specifier: workspace:*
         version: link:../../packages/shared

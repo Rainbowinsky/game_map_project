@@ -9,6 +9,7 @@
 - [data-and-api.md](./data-and-api.md)：共享 TypeScript/Zod 模型、Prisma 数据模型、REST API 契约、错误与并发约定。
 - [implementation-plan.md](./implementation-plan.md)：工作包、依赖、验证门禁、验收矩阵及明确延期项。
 - [p1-implementation-report.md](./p1-implementation-report.md)：P1 完成内容、设计取舍、验证结果与下一步。
+- [p4-implementation-report.md](./p4-implementation-report.md)：P4 API 闭环、事务规则、验证结果与下一步。
 - [p2-implementation-report.md](./p2-implementation-report.md)：P2 数据库/API/存储基础设施、验证结果与数据库待办。
 - [p3-implementation-report.md](./p3-implementation-report.md)：P3 密码、JWT、认证 Guard、限流和所有权隔离实现。
 
