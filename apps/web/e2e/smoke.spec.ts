@@ -256,6 +256,35 @@ test('opens a recent map and restores the editor route after refresh', async ({ 
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();
 });
 
+test('exports a complete-map PNG with a safe preview resolution', async ({ page }) => {
+  await prepare(page);
+  await page.goto(`/editor/${ids.map}`);
+  await expect(page.getByTestId('pixi-host').locator('canvas')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '导出' })).toBeEnabled();
+  await page.getByRole('button', { name: '导出' }).click();
+  await expect(page.getByRole('dialog', { name: '导出整张地图' })).toBeVisible();
+  await expect(page.getByLabel('安全输出长边')).toHaveValue('2048');
+  await expect(page.getByTestId('export-dimensions')).toContainText('2,048 × 1,365 px');
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '生成并下载 PNG' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.png$/i);
+  const stream = await download.createReadStream();
+  if (!stream) throw new Error('Expected an exported PNG download stream.');
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const signature = Buffer.concat(chunks).subarray(0, 8);
+  expect([...signature]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  await expect(page.getByRole('dialog', { name: '导出整张地图' })).toBeHidden();
+  const secondDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出' }).click();
+  await page.getByRole('button', { name: '生成并下载 PNG' }).click();
+  const secondDownload = await secondDownloadPromise;
+  expect((await secondDownload.createReadStream())?.readable).toBeTruthy();
+});
+
 test('places, selects, transforms, duplicates and deletes a stamp', async ({ page }) => {
   await prepare(page);
   await page.goto(`/editor/${ids.map}`);

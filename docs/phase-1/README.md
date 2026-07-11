@@ -1,6 +1,6 @@
 # 第一阶段设计文档索引
 
-状态：P0-P10 已完成；编辑器已具备数据加载、相机、命令历史、图层编辑、图章放置、多选、变换、自动保存与崩溃恢复闭环。
+状态：P0-P11 已完成；编辑器已具备数据加载、相机、命令历史、图层编辑、图章放置、多选、变换、自动保存、崩溃恢复与安全整图 PNG 导出闭环。
 
 本目录是“基础编辑器 MVP”的实施基线：
 
@@ -18,6 +18,7 @@
 - [p8-implementation-report.md](./p8-implementation-report.md)：P8 图层面板、命令接入、删除策略与渲染投影。
 - [p9-implementation-report.md](./p9-implementation-report.md)：P9 原创图章、资源生命周期、选择、变换与快捷操作。
 - [p10-implementation-report.md](./p10-implementation-report.md)：P10 持久 operation journal、自动保存状态机、冲突与崩溃恢复。
+- [p11-implementation-report.md](./p11-implementation-report.md)：P11 安全尺寸规划、独立 Pixi 导出场景、资源就绪、Blob 下载与验证。
 
 ## 第一阶段范围
 

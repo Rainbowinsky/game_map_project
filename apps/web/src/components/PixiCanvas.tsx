@@ -22,6 +22,7 @@ import {
   type TransformMode,
 } from '../editor/selection/geometry.js';
 import { MapRenderer } from '../renderer/MapRenderer.js';
+import type { PngExportResult } from '../exports/png-exporter.js';
 import { useEditorStore, type EditorTool } from '../stores/editor-store.js';
 import { useMapStore } from '../stores/map-store.js';
 
@@ -35,6 +36,8 @@ export interface PixiCanvasHandle {
   zoomIn(): void;
   zoomOut(): void;
   fitMap(animate?: boolean): void;
+  getExportMaxTextureSize(): number | null;
+  exportPng(longEdge: number): Promise<PngExportResult>;
 }
 
 interface PixiCanvasProps {
@@ -442,6 +445,8 @@ export function PixiCanvas({
             72,
             animate && !reducedMotion,
           ),
+        getExportMaxTextureSize: () => renderer.getExportMaxTextureSize(),
+        exportPng: (longEdge) => renderer.exportPng(longEdge),
       });
     });
 

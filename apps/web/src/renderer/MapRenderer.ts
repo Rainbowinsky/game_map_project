@@ -19,15 +19,16 @@ import {
   type TransformMode,
 } from '../editor/selection/geometry.js';
 import { AssetRegistry } from './AssetRegistry.js';
+import {
+  exportMapToPng,
+  rendererMaxTextureSize,
+  type PngExportResult,
+} from '../exports/png-exporter.js';
+import { drawMapArtwork } from './map-artwork.js';
 import { ObjectProjection } from './ObjectProjection.js';
 import { RendererProjection } from './RendererProjection.js';
 
 const GRID_LINE_LIMIT = 180;
-
-function colorToNumber(color: string): number {
-  const parsed = Number.parseInt(color.replace('#', ''), 16);
-  return Number.isFinite(parsed) ? parsed : 0xc8c5b5;
-}
 
 function gridStep(base: number, zoom: number): { minor: number; major: number } {
   let minor = base;
@@ -112,6 +113,24 @@ export class MapRenderer {
     return this.initialized ? Math.round(this.application.ticker.FPS) : 0;
   }
 
+  getExportMaxTextureSize(): number | null {
+    return this.initialized ? rendererMaxTextureSize(this.application.renderer) : null;
+  }
+
+  async exportPng(requestedLongEdge: number): Promise<PngExportResult> {
+    if (!this.initialized || this.destroyed) {
+      throw new Error('地图画布尚未就绪，暂时无法导出。');
+    }
+    return exportMapToPng({
+      renderer: this.application.renderer,
+      document: this.document,
+      layers: this.mapLayers,
+      objects: this.mapObjects,
+      requestedLongEdge,
+      constraints: { deviceMaxTextureSize: this.getExportMaxTextureSize() },
+    });
+  }
+
   syncLayers(layers: readonly MapLayer[]): void {
     if (this.destroyed) return;
     this.mapLayers = layers;
@@ -186,30 +205,7 @@ export class MapRenderer {
   }
 
   private drawStaticScene(): void {
-    const { width, height } = this.document;
-    const background =
-      this.document.background.kind === 'solid'
-        ? colorToNumber(this.document.background.color)
-        : 0xc9c6b6;
-    this.mapBackground
-      .rect(0, 0, width, height)
-      .fill({ color: background })
-      .rect(0, 0, width, height)
-      .fill({ color: 0xe7e1cf, alpha: 0.72 });
-
-    const contour = new Graphics();
-    contour
-      .ellipse(width * 0.18, height * 0.22, width * 0.13, height * 0.09)
-      .stroke({ color: 0x59634f, alpha: 0.12, width: 2 })
-      .ellipse(width * 0.83, height * 0.75, width * 0.18, height * 0.14)
-      .stroke({ color: 0x59634f, alpha: 0.1, width: 2 });
-    this.mapBackground.addChild(contour);
-
-    this.mapBoundary
-      .rect(0, 0, width, height)
-      .stroke({ color: 0xe6e4d7, alpha: 0.55, width: 2 })
-      .rect(10, 10, Math.max(0, width - 20), Math.max(0, height - 20))
-      .stroke({ color: 0x384133, alpha: 0.3, width: 1 });
+    drawMapArtwork(this.document, this.mapBackground, this.mapBoundary);
   }
 
   private applyCamera(): void {

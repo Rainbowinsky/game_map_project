@@ -5,6 +5,7 @@ import type { MapObject } from '@fantasy-map/map-model';
 
 import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
+import { ExportDialog } from '../components/ExportDialog.js';
 import { Icon } from '../components/Icon.js';
 import { LoadingState } from '../components/LoadingState.js';
 import { LayerPanel } from '../components/LayerPanel.js';
@@ -30,6 +31,7 @@ import {
   selectedObjects,
 } from '../editor/object-actions.js';
 import { useEditorAutosave } from '../editor/autosave/use-editor-autosave.js';
+import { downloadPngBlob } from '../exports/png-exporter.js';
 
 const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
   [
@@ -62,6 +64,12 @@ export function EditorPage() {
   const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
   const [rightTab, setRightTab] = useState<'layers' | 'properties'>('layers');
   const canvasHandle = useRef<PixiCanvasHandle | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportMaxTextureSize, setExportMaxTextureSize] = useState<number | null | undefined>(
+    undefined,
+  );
   const clipboardRef = useRef<readonly MapObject[]>([]);
   const [interactionError, setInteractionError] = useState<string | null>(null);
   const commandManagerRef = useRef<CommandManager | null>(null);
@@ -82,8 +90,36 @@ export function EditorPage() {
   });
   const onCanvasReady = useCallback((handle: PixiCanvasHandle) => {
     canvasHandle.current = handle;
+    setExportMaxTextureSize(handle.getExportMaxTextureSize());
   }, []);
   const onTelemetry = useCallback((next: CanvasTelemetry) => setTelemetry(next), []);
+  const openExportDialog = useCallback(() => {
+    setExportError(null);
+    setExportDialogOpen(true);
+  }, []);
+  const closeExportDialog = useCallback(() => {
+    if (exporting) return;
+    setExportDialogOpen(false);
+    setExportError(null);
+  }, [exporting]);
+  const exportPng = useCallback(async (longEdge: number) => {
+    const canvas = canvasHandle.current;
+    if (!canvas) {
+      setExportError('地图画布仍在初始化，请稍后再试。');
+      return;
+    }
+    setExporting(true);
+    setExportError(null);
+    try {
+      const result = await canvas.exportPng(longEdge);
+      downloadPngBlob(result.blob, result.filename);
+      setExportDialogOpen(false);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : '导出失败，请稍后重试。');
+    } finally {
+      setExporting(false);
+    }
+  }, []);
   const query = useQuery({
     queryKey: ['map-load', mapId],
     queryFn: () => loadMapIntoStore(session?.accessToken ?? '', mapId),
@@ -191,7 +227,11 @@ export function EditorPage() {
           <i />
           {saveLabels[autosave.snapshot.status]} <span>R{document.revision}</span>
         </button>
-        <button className="button button--export" disabled>
+        <button
+          className="button button--export"
+          onClick={openExportDialog}
+          disabled={exportMaxTextureSize === undefined}
+        >
           导出
         </button>
         <button className="avatar avatar--small">{session.user.displayName.slice(0, 1)}</button>
@@ -347,6 +387,16 @@ export function EditorPage() {
         <span>{saveLabels[autosave.snapshot.status]}</span>
         <span className="editor-status__schema">SCHEMA V{document.schemaVersion}</span>
       </footer>
+      {exportDialogOpen && exportMaxTextureSize !== undefined && (
+        <ExportDialog
+          document={document}
+          maxTextureSize={exportMaxTextureSize}
+          exporting={exporting}
+          error={exportError}
+          onClose={closeExportDialog}
+          onExport={(longEdge) => void exportPng(longEdge)}
+        />
+      )}
       <div className="minimum-size">
         <Icon name="map" />
         <h2>需要更宽阔的制图台</h2>
