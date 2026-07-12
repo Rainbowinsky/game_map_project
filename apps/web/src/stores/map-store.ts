@@ -6,10 +6,12 @@ import {
   mapObjectSchema,
   mapChunkPayloadSchema,
   mapDocumentSchema,
+  locationSchema,
   type MapChunkPayload,
   type MapDocument,
   type MapLayer,
   type MapObject,
+  type Location,
 } from '@fantasy-map/map-model';
 
 import type { DomainPatch } from '../editor/commands/domain-patch.js';
@@ -18,8 +20,9 @@ export interface MapState {
   document: MapDocument | null;
   layersById: Record<string, MapLayer>;
   objectsById: Record<string, MapObject>;
+  locationsById: Record<string, Location>;
   chunkObjectIds: Record<string, string[]>;
-  hydrate: (document: MapDocument, chunks: MapChunkPayload[]) => void;
+  hydrate: (document: MapDocument, chunks: MapChunkPayload[], locations?: Location[]) => void;
   applyPatches: (patches: readonly DomainPatch[]) => void;
   confirmRevision: (revision: number, updatedAt: string) => void;
   clear: () => void;
@@ -29,19 +32,22 @@ const emptyState = () => ({
   document: null,
   layersById: {},
   objectsById: {},
+  locationsById: {},
   chunkObjectIds: {},
 });
 
 export const useMapStore: UseBoundStore<StoreApi<MapState>> = create<MapState>()(
   immer((set) => ({
     ...emptyState(),
-    hydrate: (documentInput, chunkInputs) => {
+    hydrate: (documentInput, chunkInputs, locationInputs = []) => {
       const document = mapDocumentSchema.parse(documentInput);
       const chunks = chunkInputs.map((chunk) => mapChunkPayloadSchema.parse(chunk));
+      const locations = locationInputs.map((location) => locationSchema.parse(location));
       set((state) => {
         state.document = document;
         state.layersById = Object.fromEntries(document.layers.map((layer) => [layer.id, layer]));
         state.objectsById = {};
+        state.locationsById = Object.fromEntries(locations.map((location) => [location.id, location]));
         state.chunkObjectIds = {};
         for (const chunk of chunks) {
           const key = `${chunk.coordinate.x}:${chunk.coordinate.y}`;
@@ -57,6 +63,25 @@ export const useMapStore: UseBoundStore<StoreApi<MapState>> = create<MapState>()
 
         for (const patch of patches) {
           switch (patch.type) {
+            case 'location.create': {
+              const location = locationSchema.parse(patch.location);
+              if (state.locationsById[location.id]) throw new Error(`Location ${location.id} already exists.`);
+              if (location.mapId !== state.document.id) throw new Error('Location belongs to another map.');
+              state.locationsById[location.id] = location;
+              break;
+            }
+            case 'location.replace': {
+              const location = locationSchema.parse(patch.location);
+              if (!state.locationsById[location.id]) throw new Error(`Location ${location.id} does not exist.`);
+              if (location.mapId !== state.document.id) throw new Error('Location belongs to another map.');
+              state.locationsById[location.id] = location;
+              break;
+            }
+            case 'location.delete': {
+              if (!state.locationsById[patch.locationId]) throw new Error(`Location ${patch.locationId} does not exist.`);
+              delete state.locationsById[patch.locationId];
+              break;
+            }
             case 'object.create': {
               const object = mapObjectSchema.parse(patch.object);
               if (state.objectsById[object.id])

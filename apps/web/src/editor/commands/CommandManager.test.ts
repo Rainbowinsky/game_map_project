@@ -5,6 +5,8 @@ import {
   createPathMapObjectFixture,
   createStampMapObjectFixture,
   createTerrainStrokeMapObjectFixture,
+  createMarkerMapObjectFixture,
+  createLocationFixture,
 } from '@fantasy-map/map-model/fixtures';
 import type { MapObject } from '@fantasy-map/map-model';
 
@@ -12,6 +14,7 @@ import { useMapStore } from '../../stores/map-store.js';
 import { CommandManager } from './CommandManager.js';
 import {
   CreateLayerCommand,
+  CreateLocationCommand,
   CreatePathCommand,
   DrawTerrainStrokeCommand,
   DeleteLayerCommand,
@@ -87,6 +90,47 @@ describe('CommandManager', () => {
     expect(currentObject()).toMatchObject({ x: 512, y: 512, chunk: { x: 0, y: 0 } });
     expect(events).toEqual(['execute', 'undo', 'redo']);
     expect(operations).toEqual(['object.update', 'object.update', 'object.update']);
+  });
+
+  it('creates and undoes a location with its marker as one atomic patch batch', () => {
+    const manager = loadedManager();
+    const location = createLocationFixture();
+    const existingLayerId = useMapStore.getState().document?.layers[1]?.id;
+    if (!existingLayerId) throw new Error('Expected fixture layer.');
+    const marker = { ...createMarkerMapObjectFixture(), layerId: existingLayerId };
+    const events: string[][] = [];
+    manager.patches.subscribe((event) => events.push(event.operations.map((operation) => operation.type)));
+
+    expect(manager.execute(new CreateLocationCommand(location, marker))).toBe(true);
+    expect(useMapStore.getState().locationsById[location.id]?.markerObjectId).toBe(marker.id);
+    expect(useMapStore.getState().objectsById[marker.id]).toMatchObject({ locationId: location.id });
+    expect(events[0]).toEqual(['location.create', 'object.create']);
+
+    expect(manager.undo()).toBe(true);
+    expect(useMapStore.getState().locationsById[location.id]).toBeUndefined();
+    expect(useMapStore.getState().objectsById[marker.id]).toBeUndefined();
+    expect(events[1]).toEqual(['object.delete', 'location.delete']);
+  });
+
+  it('moves a marker and its location in one smooth-transform operation batch', () => {
+    const manager = loadedManager();
+    const location = createLocationFixture();
+    const existingLayerId = useMapStore.getState().document?.layers[1]?.id;
+    if (!existingLayerId) throw new Error('Expected fixture layer.');
+    const marker = { ...createMarkerMapObjectFixture(), layerId: existingLayerId };
+    manager.execute(new CreateLocationCommand(location, marker));
+    const batches: string[][] = [];
+    manager.patches.subscribe((event) => batches.push(event.operations.map((operation) => operation.type)));
+
+    manager.execute(new TransformObjectsCommand({
+      [marker.id]: { x: marker.x + 120, y: marker.y + 80, rotation: marker.rotation, scaleX: marker.scaleX, scaleY: marker.scaleY },
+    }));
+    expect(useMapStore.getState().objectsById[marker.id]).toMatchObject({ x: marker.x + 120, y: marker.y + 80 });
+    expect(useMapStore.getState().locationsById[location.id]).toMatchObject({ x: marker.x + 120, y: marker.y + 80 });
+    expect(batches[0]).toEqual(['object.update', 'location.update']);
+
+    manager.undo();
+    expect(useMapStore.getState().locationsById[location.id]).toMatchObject({ x: location.x, y: location.y });
   });
 
   it('creates and edits path geometry through persisted object operations', () => {

@@ -86,6 +86,26 @@ export function objectBounds(object: MapObject): WorldRect {
       height: Math.max(EPSILON, bottom - top + padding * 2),
     };
   }
+  if (object.type === 'text') {
+    const lines = object.text.split('\n');
+    const rawWidth = Math.max(...lines.map((line) => Math.max(1, [...line].length))) * object.fontSize * 0.62;
+    const rawHeight = lines.length * object.fontSize * 1.2;
+    const width = rawWidth * Math.abs(object.scaleX);
+    const height = rawHeight * Math.abs(object.scaleY);
+    const localCenterX = object.align === 'left' ? width / 2 : object.align === 'right' ? -width / 2 : 0;
+    const cosine = Math.cos(object.rotation);
+    const sine = Math.sin(object.rotation);
+    const centerX = object.x + localCenterX * cosine;
+    const centerY = object.y + localCenterX * sine;
+    const boundWidth = Math.abs(width * cosine) + Math.abs(height * sine);
+    const boundHeight = Math.abs(width * sine) + Math.abs(height * cosine);
+    return { x: centerX - boundWidth / 2, y: centerY - boundHeight / 2, width: Math.max(EPSILON, boundWidth), height: Math.max(EPSILON, boundHeight) };
+  }
+  if (object.type === 'marker') {
+    const width = 32 * Math.abs(object.scaleX);
+    const height = 48 * Math.abs(object.scaleY);
+    return { x: object.x - width / 2, y: object.y - height / 2, width, height };
+  }
   const halfWidth = (STAMP_INTRINSIC_SIZE * Math.abs(object.scaleX)) / 2;
   const halfHeight = (STAMP_INTRINSIC_SIZE * Math.abs(object.scaleY)) / 2;
   const cosine = Math.abs(Math.cos(object.rotation));
@@ -178,6 +198,22 @@ export function pointInObject(point: WorldPoint, object: MapObject): boolean {
         object.brush.radius
       );
     });
+  }
+  if (object.type === 'text') {
+    const dx = point.x - object.x;
+    const dy = point.y - object.y;
+    const cosine = Math.cos(-object.rotation);
+    const sine = Math.sin(-object.rotation);
+    const localX = (dx * cosine - dy * sine) / object.scaleX;
+    const localY = (dx * sine + dy * cosine) / object.scaleY;
+    const width = Math.max(...object.text.split('\n').map((line) => Math.max(1, [...line].length))) * object.fontSize * 0.62;
+    const left = object.align === 'left' ? 0 : object.align === 'right' ? -width : -width / 2;
+    const height = object.text.split('\n').length * object.fontSize * 1.2;
+    return localX >= left && localX <= left + width && Math.abs(localY) <= height / 2;
+  }
+  if (object.type === 'marker') {
+    return Math.abs(point.x - object.x) <= 18 * Math.abs(object.scaleX) &&
+      point.y >= object.y - 24 * Math.abs(object.scaleY) && point.y <= object.y + 22 * Math.abs(object.scaleY);
   }
   const dx = point.x - object.x;
   const dy = point.y - object.y;

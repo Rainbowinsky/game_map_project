@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
   mapObjectSchema,
+  locationSchema,
   toChunkCoordinate,
   type CameraState,
   type MapDocument,
@@ -21,9 +22,11 @@ import {
   CreateObjectCommand,
   CreatePathCommand,
   CreateRegionCommand,
+  CreateLocationCommand,
   DeleteObjectCommand,
   DrawTerrainStrokeCommand,
   TransformObjectsCommand,
+  UpdateObjectCommand,
   UpdatePathGeometryCommand,
   UpdateRegionGeometryCommand,
 } from '../editor/commands/commands.js';
@@ -53,6 +56,7 @@ import { MapRenderer } from '../renderer/MapRenderer.js';
 import type { PngExportResult } from '../exports/png-exporter.js';
 import { useEditorStore, type EditorTool } from '../stores/editor-store.js';
 import { useMapStore } from '../stores/map-store.js';
+import { themeRegistry } from '../themes/ThemeRegistry.js';
 
 export interface CanvasTelemetry {
   readonly camera: CameraState;
@@ -65,6 +69,7 @@ export interface PixiCanvasHandle {
   zoomIn(): void;
   zoomOut(): void;
   fitMap(animate?: boolean): void;
+  focusAt(point: WorldPoint, animate?: boolean): void;
   getExportMaxTextureSize(): number | null;
   exportPng(longEdge: number): Promise<PngExportResult>;
 }
@@ -121,7 +126,7 @@ interface TerrainGesture {
 }
 
 function localPoint(
-  event: PointerEvent | WheelEvent | DragEvent,
+  event: MouseEvent | PointerEvent | WheelEvent | DragEvent,
   element: HTMLElement,
 ): ScreenPoint {
   const bounds = element.getBoundingClientRect();
@@ -166,6 +171,16 @@ function editableTerrainLayerId(): string | null {
       )
       .sort((left, right) => right.order - left.order)[0]?.id ?? null
   );
+}
+
+function editableLayerId(type: 'text' | 'marker'): string | null {
+  const { activeLayerId } = useEditorStore.getState();
+  const { layersById } = useMapStore.getState();
+  const active = activeLayerId ? layersById[activeLayerId] : undefined;
+  if (active?.type === type && isLayerEffectivelyEditable(active.id, layersById)) return active.id;
+  return Object.values(layersById)
+    .filter((layer) => layer.type === type && isLayerEffectivelyEditable(layer.id, layersById))
+    .sort((left, right) => right.order - left.order)[0]?.id ?? null;
 }
 
 function clampToMap(document: MapDocument, point: WorldPoint): WorldPoint {
@@ -343,6 +358,53 @@ function createStampObject(
   };
 }
 
+function objectBase(document: MapDocument, layerId: string, point: WorldPoint, name: string) {
+  const now = new Date().toISOString();
+  const position = clampToMap(document, point);
+  const zIndex = Math.max(-1, ...Object.values(useMapStore.getState().objectsById)
+    .filter((object) => object.layerId === layerId).map((object) => object.zIndex)) + 1;
+  return {
+    id: crypto.randomUUID(), mapId: document.id, layerId,
+    chunk: toChunkCoordinate(position, document.settings.chunkSize), name, ...position,
+    rotation: 0, scaleX: 1, scaleY: 1, zIndex, visible: true, locked: false,
+    opacity: 1, metadata: {}, revision: 0, createdAt: now, updatedAt: now,
+  };
+}
+
+function createTextObject(document: MapDocument, point: WorldPoint): MapObject {
+  const layerId = editableLayerId('text');
+  if (!layerId) throw new Error('请先创建或解锁一个可编辑的文字图层。');
+  const draft = useEditorStore.getState().textDraft;
+  const text = draft.text.trim() || '新文字';
+  return mapObjectSchema.parse({
+    ...objectBase(document, layerId, point, text.slice(0, 120)),
+    type: 'text', text, fontSize: draft.fontSize, align: draft.align,
+    fontToken: 'font.default', colorToken: 'text.default',
+  });
+}
+
+function createLocationPair(document: MapDocument, point: WorldPoint) {
+  const layerId = editableLayerId('marker');
+  if (!layerId) throw new Error('请先创建或解锁一个可编辑的标记图层。');
+  const draft = useEditorStore.getState().locationDraft;
+  const id = crypto.randomUUID();
+  const markerId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const position = clampToMap(document, point);
+  const marker = mapObjectSchema.parse({
+    ...objectBase(document, layerId, position, `${draft.name} 标记`), id: markerId,
+    type: 'marker', locationId: id, iconAssetId: null, minZoom: null, maxZoom: null,
+  });
+  const tags = [...new Set(draft.tags.split(',').map((tag) => tag.trim()).filter(Boolean))];
+  const location = locationSchema.parse({
+    id, mapId: document.id, name: draft.name, type: draft.type, ...position,
+    summary: draft.summary.trim() || null, description: draft.description.trim() || null,
+    regionId: null, iconAssetId: null, markerObjectId: markerId, tags, customFields: {},
+    minZoom: null, maxZoom: null, createdAt: now, updatedAt: now,
+  });
+  return { location, marker };
+}
+
 export function PixiCanvas({
   document,
   tool,
@@ -373,6 +435,7 @@ export function PixiCanvas({
     let gesture: EditGesture | null = null;
     let drawing: DrawingGesture | null = null;
     let terrainGesture: TerrainGesture | null = null;
+    let textEditor: { element: HTMLTextAreaElement; objectId: string } | null = null;
     let telemetryCamera: CameraState = { x: 0, y: 0, zoom: 1 };
     let telemetryTimer = 0;
     const renderer = new MapRenderer(initialDocument);
@@ -439,6 +502,7 @@ export function PixiCanvas({
       onChange: ({ camera }: CameraSnapshot) => {
         telemetryCamera = camera;
         renderer.setCamera(camera);
+        positionTextEditor();
         if (lastPointer) pointerWorld = controller.screenToWorld(lastPointer);
         scheduleTelemetry();
       },
@@ -470,6 +534,74 @@ export function PixiCanvas({
 
     const reportError = (error: unknown) => {
       onInteractionError?.(error instanceof Error ? error.message : '操作失败，请重试。');
+    };
+    const closeTextEditor = () => {
+      if (textEditor) renderer.clearTextPreview(textEditor.objectId);
+      textEditor?.element.remove();
+      textEditor = null;
+    };
+    const positionTextEditor = () => {
+      if (!textEditor) return;
+      const object = useMapStore.getState().objectsById[textEditor.objectId];
+      if (object?.type !== 'text') return closeTextEditor();
+      const screen = controller.worldToScreen({ x: object.x, y: object.y });
+      const zoom = controller.getSnapshot().camera.zoom;
+      const lines = textEditor.element.value.split('\n');
+      const width = Math.max(80, Math.max(...lines.map((line) => Math.max(1, [...line].length))) * object.fontSize * 0.68 * zoom + 20);
+      const height = Math.max(38, lines.length * object.fontSize * 1.25 * zoom + 14);
+      textEditor.element.style.left = `${screen.x}px`;
+      textEditor.element.style.top = `${screen.y}px`;
+      textEditor.element.style.width = `${width}px`;
+      textEditor.element.style.height = `${height}px`;
+      textEditor.element.style.fontSize = `${Math.max(12, object.fontSize * zoom)}px`;
+      textEditor.element.style.fontFamily = themeRegistry.resolve(initialDocument.themeId).tokens.defaultFontFamily;
+      textEditor.element.style.textAlign = object.align;
+      textEditor.element.style.transform = `${object.align === 'left' ? 'translate(0, -50%)' : object.align === 'right' ? 'translate(-100%, -50%)' : 'translate(-50%, -50%)'} rotate(${object.rotation}rad)`;
+    };
+    const commitTextEditor = (): boolean => {
+      if (!textEditor) return true;
+      const current = textEditor;
+      const object = useMapStore.getState().objectsById[current.objectId];
+      if (object?.type !== 'text') {
+        closeTextEditor();
+        return true;
+      }
+      const text = current.element.value.trim();
+      if (!text) {
+        closeTextEditor();
+        return true;
+      }
+      try {
+        if (text !== object.text)
+          commandManager.execute(new UpdateObjectCommand(object.id, { text }, `inline-text:${object.id}`, 'Edit text'));
+        closeTextEditor();
+        onInteractionError?.(null);
+        return true;
+      } catch (error) {
+        reportError(error);
+        current.element.focus();
+        return false;
+      }
+    };
+    const beginTextEditor = (object: Extract<MapObject, { type: 'text' }>) => {
+      if (textEditor?.objectId === object.id) return;
+      if (!commitTextEditor()) return;
+      const element = window.document.createElement('textarea');
+      element.className = 'canvas-text-editor';
+      element.value = object.text;
+      element.maxLength = 2_000;
+      element.setAttribute('aria-label', '画布文字内容');
+      element.addEventListener('pointerdown', (event) => event.stopPropagation());
+      element.addEventListener('input', () => {
+        renderer.previewText(object.id, element.value);
+        positionTextEditor();
+      });
+      host.appendChild(element);
+      textEditor = { element, objectId: object.id };
+      useEditorStore.getState().setSelection([object.id]);
+      positionTextEditor();
+      element.focus();
+      element.setSelectionRange(element.value.length, element.value.length);
     };
     const capture = (event: PointerEvent) => {
       if (event.isTrusted) host.setPointerCapture(event.pointerId);
@@ -689,6 +821,12 @@ export function PixiCanvas({
       const screen = localPoint(event, host);
       lastPointer = screen;
       const world = controller.screenToWorld(screen);
+      if (event.target === textEditor?.element) return;
+      if (textEditor) {
+        commitTextEditor();
+        event.preventDefault();
+        return;
+      }
       if (
         event.button === 1 ||
         (event.button === 0 && (spacePressed || toolRef.current === 'pan'))
@@ -704,6 +842,32 @@ export function PixiCanvas({
       if (toolRef.current === 'stamp') {
         event.preventDefault();
         placeStamp(world, assetRef.current);
+        return;
+      }
+      if (toolRef.current === 'text') {
+        event.preventDefault();
+        try {
+          const hit = renderer.pick(world);
+          if (hit?.type === 'text') {
+            useEditorStore.getState().setSelection([hit.id]);
+            onInteractionError?.(null);
+            return;
+          }
+          const object = createTextObject(initialDocument, world);
+          commandManager.execute(new CreateObjectCommand(object));
+          if (object.type === 'text') beginTextEditor(object);
+          onInteractionError?.(null);
+        } catch (error) { reportError(error); }
+        return;
+      }
+      if (toolRef.current === 'location') {
+        event.preventDefault();
+        try {
+          const { location, marker } = createLocationPair(initialDocument, world);
+          commandManager.execute(new CreateLocationCommand(location, marker));
+          useEditorStore.getState().setSelection([marker.id]);
+          onInteractionError?.(null);
+        } catch (error) { reportError(error); }
         return;
       }
       if (toolRef.current === 'terrain-brush' || toolRef.current === 'terrain-eraser') {
@@ -841,6 +1005,16 @@ export function PixiCanvas({
       if (!event.shiftKey) useEditorStore.getState().setSelection([]);
       capture(event);
     };
+    const onDoubleClick = (event: MouseEvent) => {
+      if (textEditor || event.button !== 0) return;
+      const world = controller.screenToWorld(localPoint(event, host));
+      const hit = renderer.pick(world);
+      if (hit?.type !== 'text') return;
+      event.preventDefault();
+      cancelGesture();
+      beginTextEditor(hit);
+      onInteractionError?.(null);
+    };
     const onPointerMove = (event: PointerEvent) => {
       const point = localPoint(event, host);
       const world = controller.screenToWorld(point);
@@ -977,6 +1151,16 @@ export function PixiCanvas({
       if (event.dataTransfer?.types.includes('application/x-map-stamp')) event.preventDefault();
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      if (textEditor && event.target === textEditor.element) {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          commitTextEditor();
+          event.preventDefault();
+        } else if (event.key === 'Escape') {
+          closeTextEditor();
+          event.preventDefault();
+        }
+        return;
+      }
       if (
         event.code === 'Space' &&
         !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
@@ -1000,16 +1184,22 @@ export function PixiCanvas({
         host.classList.remove('is-pan-ready');
       }
     };
+    const onWindowPointerDown = (event: PointerEvent) => {
+      if (textEditor && event.target !== textEditor.element && !host.contains(event.target as Node))
+        commitTextEditor();
+    };
 
     host.addEventListener('wheel', onWheel, { passive: false });
     host.addEventListener('pointerdown', onPointerDown);
     host.addEventListener('pointermove', onPointerMove);
     host.addEventListener('pointerup', endPointer);
     host.addEventListener('pointercancel', cancelPointer);
+    host.addEventListener('dblclick', onDoubleClick);
     host.addEventListener('drop', onDrop);
     host.addEventListener('dragover', onDragOver);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('pointerdown', onWindowPointerDown);
 
     void renderer.mount(host).then(() => {
       if (disposed) return;
@@ -1029,6 +1219,8 @@ export function PixiCanvas({
             72,
             animate && !reducedMotion,
           ),
+        focusAt: (point, animate = true) =>
+          controller.focus({ x: point.x - 32, y: point.y - 32, width: 64, height: 64 }, 160, animate && !reducedMotion),
         getExportMaxTextureSize: () => renderer.getExportMaxTextureSize(),
         exportPng: (longEdge) => renderer.exportPng(longEdge),
       });
@@ -1042,10 +1234,13 @@ export function PixiCanvas({
       host.removeEventListener('pointermove', onPointerMove);
       host.removeEventListener('pointerup', endPointer);
       host.removeEventListener('pointercancel', cancelPointer);
+      host.removeEventListener('dblclick', onDoubleClick);
       host.removeEventListener('drop', onDrop);
       host.removeEventListener('dragover', onDragOver);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('pointerdown', onWindowPointerDown);
+      closeTextEditor();
       if (telemetryTimer) window.clearTimeout(telemetryTimer);
       controller.destroy();
       unsubscribeProjection();

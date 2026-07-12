@@ -11,6 +11,7 @@ import {
   mapChunkPayloadSchema,
   mapChunkDescriptorSchema,
   mapDocumentSchema,
+  locationSchema,
   applyOperationsRequestSchema,
   applyOperationsResponseSchema,
   type ApplyOperationsRequest,
@@ -48,6 +49,7 @@ const chunkListSchema = z
     nextCursor: z.string().uuid().nullable(),
   })
   .strict();
+const locationListSchema = z.object({ items: z.array(locationSchema) }).strict();
 
 export class ApiError extends Error {
   constructor(
@@ -147,6 +149,8 @@ export const api = {
       {},
       accessToken,
     ),
+  listLocations: (accessToken: string, mapId: string) =>
+    apiRequest(`/maps/${mapId}/locations`, locationListSchema, {}, accessToken),
   applyOperations: (
     accessToken: string,
     mapId: string,

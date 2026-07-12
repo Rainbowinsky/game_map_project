@@ -2489,3 +2489,68 @@ svg {
     transition-duration: 0.01ms !important;
   }
 }
+
+.location-panel { display: grid; gap: 0.85rem; padding: 1rem; }
+.location-search { display: grid; gap: 0.35rem; color: var(--muted, #73796f); font-size: 0.72rem; }
+.location-search input, .location-panel input { width: 100%; }
+.location-detail { padding: 0.9rem; border: 1px solid rgba(80, 91, 72, 0.22); background: rgba(255,255,255,0.42); }
+.location-detail h3 { margin: 0.2rem 0 0.5rem; }
+.location-detail p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.location-description { max-height: 12rem; overflow: auto; }
+.location-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.65rem 0; }
+.location-tags span { padding: 0.18rem 0.42rem; border-radius: 999px; background: rgba(90,112,75,0.13); font-size: 0.68rem; }
+.location-list { display: grid; gap: 0.35rem; max-height: 42vh; overflow: auto; }
+.location-list button { display: grid; gap: 0.2rem; padding: 0.65rem; border: 1px solid transparent; background: transparent; text-align: left; }
+.location-list button:hover, .location-list button.active { border-color: rgba(90,112,75,0.35); background: rgba(90,112,75,0.09); }
+.location-list small { color: #73796f; }
+
+.layer-create-menu { position: relative; }
+.layer-create-trigger { display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap; }
+.layer-create-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  width: min(19rem, calc(100vw - 3rem));
+  padding: 0.45rem;
+  border: 1px solid rgba(151, 164, 140, 0.28);
+  background: #1b2119;
+  box-shadow: 0 0.9rem 2.4rem rgba(0, 0, 0, 0.38);
+}
+.layer-create-options > button {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.62rem 0.7rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.layer-create-options > button:hover,
+.layer-create-options > button:focus-visible { background: rgba(156, 174, 143, 0.12); }
+.layer-create-options > button span { display: grid; gap: 0.14rem; }
+.layer-create-options > button small { color: #7f8978; font-size: 0.67rem; }
+
+.canvas-text-editor {
+  position: absolute;
+  z-index: 30;
+  min-width: 5rem;
+  min-height: 2.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: #273127;
+  line-height: 1.2;
+  resize: none;
+  overflow: hidden;
+  transform-origin: center;
+  box-shadow: none;
+}
+.canvas-text-editor::selection { background: rgba(75, 113, 193, 0.28); }

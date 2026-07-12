@@ -245,6 +245,36 @@ export class MapsService {
     return { items, nextCursor: hasNextPage ? (items.at(-1)?.id ?? null) : null };
   }
 
+  async listLocations(
+    actorId: string,
+    mapId: string,
+    query: { q?: string | undefined; type?: string | undefined; tag?: string | undefined },
+  ) {
+    await this.ownership.requireMap(actorId, mapId);
+    const rows = await this.prisma.location.findMany({
+      where: {
+        mapId,
+        ...(query.type ? { type: query.type } : {}),
+        ...(query.q
+          ? { OR: [{ name: { contains: query.q } }, { summary: { contains: query.q } }] }
+          : {}),
+      },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+    const items = rows
+      .map((row) => this.locationModelFromState({
+        ...row,
+        tags: row.tags as Prisma.JsonValue,
+        customFields: row.customFields as Prisma.JsonObject,
+      }))
+      .filter((location) =>
+        query.tag
+          ? location.tags.some((tag) => tag.toLocaleLowerCase() === query.tag!.toLocaleLowerCase())
+          : true,
+      );
+    return { items };
+  }
+
   async getChunk(actorId: string, mapId: string, x: number, y: number) {
     await this.ownership.requireMap(actorId, mapId);
     const chunk = await this.prisma.mapChunk.findFirst({

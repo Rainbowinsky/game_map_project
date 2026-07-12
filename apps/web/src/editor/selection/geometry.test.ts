@@ -4,6 +4,7 @@ import {
   createPathMapObjectFixture,
   createRegionMapObjectFixture,
   createStampMapObjectFixture,
+  createTextMapObjectFixture,
 } from '@fantasy-map/map-model/fixtures';
 
 import {
@@ -94,5 +95,13 @@ describe('selection geometry', () => {
     expect(pointInObject({ x: 1500, y: 1300 }, region)).toBe(true);
     expect(pointInObject({ x: 900, y: 900 }, region)).toBe(false);
     expect(objectBounds(region)).toMatchObject({ x: 997, y: 997 });
+  });
+
+  it('uses the rendered text range instead of the fixed stamp hit box', () => {
+    const text = { ...createTextMapObjectFixture(), text: 'Daily life annotation', fontSize: 24, align: 'left' as const, rotation: 0, scaleX: 1, scaleY: 1 };
+    const bounds = objectBounds(text);
+    expect(bounds.width).toBeGreaterThan(200);
+    expect(pointInObject({ x: text.x + 180, y: text.y }, text)).toBe(true);
+    expect(pointInObject({ x: text.x - 10, y: text.y }, text)).toBe(false);
   });
 });

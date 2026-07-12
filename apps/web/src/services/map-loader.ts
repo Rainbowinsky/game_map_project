@@ -14,13 +14,14 @@ async function loadInBatches<T, R>(
 }
 
 export async function loadMapIntoStore(accessToken: string, mapId: string) {
-  const [document, chunkList] = await Promise.all([
+  const [document, chunkList, locationList] = await Promise.all([
     api.getMap(accessToken, mapId),
     api.listChunks(accessToken, mapId),
+    api.listLocations(accessToken, mapId),
   ]);
   const chunks = await loadInBatches(chunkList.items, (chunk) =>
     api.getChunk(accessToken, mapId, chunk.coordinate),
   );
-  useMapStore.getState().hydrate(document, chunks);
+  useMapStore.getState().hydrate(document, chunks, locationList.items);
   return { mapId: document.id, revision: document.revision, chunkCount: chunks.length };
 }

@@ -4,6 +4,7 @@ import type {
   MapObject,
   MapOperation,
   ObjectChanges,
+  Location,
 } from '@fantasy-map/map-model';
 
 /**
@@ -11,6 +12,21 @@ import type {
  * optional operation is sent to persistence by the operation journal.
  */
 export type DomainPatch =
+  | {
+      readonly type: 'location.create';
+      readonly location: Location;
+      readonly operation: MapOperation;
+    }
+  | {
+      readonly type: 'location.replace';
+      readonly location: Location;
+      readonly operation: MapOperation;
+    }
+  | {
+      readonly type: 'location.delete';
+      readonly locationId: string;
+      readonly operation: MapOperation;
+    }
   | {
       readonly type: 'object.create';
       readonly object: MapObject;
@@ -57,6 +73,7 @@ export interface CommandContext {
   getDocument(): MapDocument;
   getLayer(layerId: string): MapLayer | undefined;
   getObject(objectId: string): MapObject | undefined;
+  getLocation(locationId: string): Location | undefined;
   getObjectsInLayer(layerId: string): readonly MapObject[];
   applyPatches(patches: readonly DomainPatch[]): void;
 }

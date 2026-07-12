@@ -11,6 +11,7 @@ export function createMapCommandContext(): CommandContext {
     },
     getLayer: (layerId) => useMapStore.getState().layersById[layerId],
     getObject: (objectId) => useMapStore.getState().objectsById[objectId],
+    getLocation: (locationId) => useMapStore.getState().locationsById[locationId],
     getObjectsInLayer: (layerId) =>
       Object.values(useMapStore.getState().objectsById).filter(
         (object) => object.layerId === layerId,

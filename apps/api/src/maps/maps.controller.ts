@@ -35,12 +35,14 @@ import {
   layerIdParamSchema,
   mapIdParamSchema,
   operationRequestSchema,
+  locationQuerySchema,
   projectIdParamSchema,
   reorderLayersRequestSchema,
   updateLayerRequestSchema,
   type CreateLayerRequest,
   type DeleteLayerRequest,
   type OperationRequestEnvelope,
+  type LocationQuery,
   type ReorderLayersRequest,
   type UpdateLayerRequest,
 } from './maps.schemas.js';
@@ -122,6 +124,15 @@ export class MapsController {
     @Query(new ZodValidationPipe(paginationQuerySchema)) query: PaginationQuery,
   ) {
     return this.maps.listChunks(actor.id, params.mapId, query);
+  }
+
+  @Get('maps/:mapId/locations')
+  listLocations(
+    @CurrentUser() actor: Actor,
+    @Param(new ZodValidationPipe(mapIdParamSchema)) params: { mapId: string },
+    @Query(new ZodValidationPipe(locationQuerySchema)) query: LocationQuery,
+  ) {
+    return this.maps.listLocations(actor.id, params.mapId, query);
   }
 
   @Get('maps/:mapId/chunks/:x/:y')

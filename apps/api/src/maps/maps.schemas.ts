@@ -11,6 +11,13 @@ const revisionEnvelope = z.object({
 });
 
 export const mapIdParamSchema = z.object({ mapId: z.string().uuid() }).strict();
+export const locationQuerySchema = z
+  .object({
+    q: z.string().trim().max(120).optional(),
+    type: z.string().trim().max(50).optional(),
+    tag: z.string().trim().max(48).optional(),
+  })
+  .strict();
 export const projectIdParamSchema = z.object({ projectId: z.string().uuid() }).strict();
 export const layerIdParamSchema = z
   .object({ mapId: z.string().uuid(), layerId: z.string().uuid() })
@@ -68,3 +75,4 @@ export type UpdateLayerRequest = z.infer<typeof updateLayerRequestSchema>;
 export type ReorderLayersRequest = z.infer<typeof reorderLayersRequestSchema>;
 export type DeleteLayerRequest = z.infer<typeof deleteLayerRequestSchema>;
 export type OperationRequestEnvelope = z.infer<typeof operationRequestSchema>;
+export type LocationQuery = z.infer<typeof locationQuerySchema>;

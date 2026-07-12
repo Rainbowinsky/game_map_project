@@ -13,6 +13,11 @@ import {
   type MapObjectInput,
   type MapOperation,
   type ObjectChanges,
+  locationSchema,
+  locationChangesSchema,
+  type Location,
+  type LocationChanges,
+  type LocationInput,
 } from '@fantasy-map/map-model';
 
 import type {
@@ -55,6 +60,15 @@ const OBJECT_CHANGE_KEYS = [
   'fillToken',
   'strokeToken',
   'strokeWidth',
+  'text',
+  'fontSize',
+  'align',
+  'fontToken',
+  'colorToken',
+  'locationId',
+  'iconAssetId',
+  'minZoom',
+  'maxZoom',
 ] as const;
 
 const LAYER_CHANGE_KEYS = [
@@ -250,6 +264,76 @@ export class DrawTerrainStrokeCommand extends CreateObjectCommand {
   override readonly label = 'Draw terrain stroke';
 }
 
+function locationInput(location: Location) {
+  const omitted = new Set(['mapId', 'markerObjectId', 'createdAt', 'updatedAt']);
+  return Object.fromEntries(Object.entries(location).filter(([key]) => !omitted.has(key))) as LocationInput;
+}
+
+/** Creates a location and its primary marker in one history and autosave batch. */
+export class CreateLocationCommand extends SnapshotCommand {
+  readonly id = 'location.create';
+  readonly label = 'Create location';
+
+  constructor(private readonly location: Location, private readonly marker: MapObject) { super(); }
+
+  execute(context: CommandContext): CommandExecution {
+    if (this.forward) return this.redo();
+    if (this.marker.type !== 'marker' || this.marker.locationId !== this.location.id)
+      throw new Error('Location marker must reference the created location.');
+    if (context.getLocation(this.location.id) || context.getObject(this.marker.id))
+      throw new Error('Location or marker ID already exists.');
+    const parsedLocation = locationSchema.parse({ ...this.location, markerObjectId: this.marker.id });
+    const marker = normalizedObject(context, this.marker);
+    this.forward = [
+      { type: 'location.create', location: parsedLocation, operation: { type: 'location.create', location: locationInput(parsedLocation) } },
+      { type: 'object.create', object: marker, operation: { type: 'object.create', object: objectInput(marker) } },
+    ];
+    this.inverse = [
+      { type: 'object.delete', objectId: marker.id, operation: { type: 'object.delete', objectId: marker.id } },
+      { type: 'location.delete', locationId: parsedLocation.id, operation: { type: 'location.delete', locationId: parsedLocation.id } },
+    ];
+    return { patches: this.forward };
+  }
+}
+
+export class UpdateLocationCommand extends SnapshotCommand {
+  readonly id = 'location.update';
+  readonly label = 'Update location';
+  constructor(private readonly locationId: string, private readonly changes: LocationChanges) { super(); }
+  execute(context: CommandContext): CommandExecution {
+    if (this.forward) return this.redo();
+    const before = context.getLocation(this.locationId);
+    if (!before) throw new Error(`Location ${this.locationId} does not exist.`);
+    const changes = locationChangesSchema.parse(this.changes);
+    const after = locationSchema.parse({ ...before, ...changes, updatedAt: new Date().toISOString() });
+    const inverseChanges = Object.fromEntries(Object.keys(changes).map((key) => [key, before[key as keyof Location]])) as LocationChanges;
+    this.forward = [{ type: 'location.replace', location: after, operation: { type: 'location.update', locationId: before.id, changes } }];
+    this.inverse = [{ type: 'location.replace', location: before, operation: { type: 'location.update', locationId: before.id, changes: locationChangesSchema.parse(inverseChanges) } }];
+    return { patches: this.forward };
+  }
+}
+
+export class DeleteLocationCommand extends SnapshotCommand {
+  readonly id = 'location.delete';
+  readonly label = 'Delete location';
+  constructor(private readonly locationId: string) { super(); }
+  execute(context: CommandContext): CommandExecution {
+    if (this.forward) return this.redo();
+    const location = context.getLocation(this.locationId);
+    if (!location) throw new Error(`Location ${this.locationId} does not exist.`);
+    const marker = location.markerObjectId ? context.getObject(location.markerObjectId) : undefined;
+    this.forward = [
+      ...(marker ? [{ type: 'object.delete' as const, objectId: marker.id, operation: { type: 'object.delete' as const, objectId: marker.id } }] : []),
+      { type: 'location.delete', locationId: location.id, operation: { type: 'location.delete', locationId: location.id } },
+    ];
+    this.inverse = [
+      { type: 'location.create', location, operation: { type: 'location.create', location: locationInput(location) } },
+      ...(marker ? [{ type: 'object.create' as const, object: marker, operation: { type: 'object.create' as const, object: objectInput(marker) } }] : []),
+    ];
+    return { patches: this.forward };
+  }
+}
+
 export class UpdateObjectCommand extends SnapshotCommand {
   readonly id: string = 'object.update';
   readonly label: string;
@@ -388,6 +472,26 @@ export class TransformObjectsCommand extends SnapshotCommand {
       if (!hasChangedObjectFields(current, next)) continue;
       forward.push(objectPatch(current, next));
       inverse.unshift(objectPatch(next, current));
+      if (current.type === 'marker' && (current.x !== next.x || current.y !== next.y)) {
+        const location = context.getLocation(current.locationId);
+        if (!location) throw new Error(`Location ${current.locationId} does not exist.`);
+        const movedLocation = locationSchema.parse({
+          ...location,
+          x: next.x,
+          y: next.y,
+          updatedAt: new Date().toISOString(),
+        });
+        forward.push({
+          type: 'location.replace',
+          location: movedLocation,
+          operation: { type: 'location.update', locationId: location.id, changes: { x: next.x, y: next.y } },
+        });
+        inverse.unshift({
+          type: 'location.replace',
+          location,
+          operation: { type: 'location.update', locationId: location.id, changes: { x: location.x, y: location.y } },
+        });
+      }
     }
     this.forward = forward;
     this.inverse = inverse;

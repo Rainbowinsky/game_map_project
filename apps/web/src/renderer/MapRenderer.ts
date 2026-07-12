@@ -115,6 +115,7 @@ export class MapRenderer {
 
   setCamera(camera: CameraState): void {
     this.camera = camera;
+    this.objects.setZoom(camera.zoom);
     if (!this.initialized || this.destroyed) return;
     this.applyCamera();
   }
@@ -202,6 +203,14 @@ export class MapRenderer {
     this.previewObjects = null;
     this.objects.clearPreview();
     this.drawSelection();
+  }
+
+  previewText(objectId: string, text: string): void {
+    this.objects.previewText(objectId, text);
+  }
+
+  clearTextPreview(objectId: string): void {
+    this.objects.clearTextPreview(objectId);
   }
 
   previewGeometry(object: MapObject | null): void {

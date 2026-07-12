@@ -4,7 +4,7 @@ import type { TerrainBrush, TerrainKind } from '@fantasy-map/map-model';
 import { DEFAULT_STAMP_ASSET_ID } from '../assets/stamp-assets.js';
 
 export type EditorTool =
-  'select' | 'pan' | 'stamp' | 'terrain-brush' | 'terrain-eraser' | 'road' | 'river' | 'region';
+  'select' | 'pan' | 'stamp' | 'terrain-brush' | 'terrain-eraser' | 'road' | 'river' | 'region' | 'text' | 'location';
 export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'offline' | 'error' | 'conflict';
 
 interface EditorState {
@@ -20,6 +20,8 @@ interface EditorState {
     regionStrokeWidth: number;
     opacity: number;
   };
+  textDraft: { text: string; fontSize: number; align: 'left' | 'center' | 'right' };
+  locationDraft: { name: string; type: string; summary: string; description: string; tags: string };
   leftPanelOpen: boolean;
   rightPanelOpen: boolean;
   saveStatus: SaveStatus;
@@ -30,6 +32,8 @@ interface EditorState {
   setTerrainKind: (kind: TerrainKind) => void;
   setTerrainBrush: (changes: Partial<TerrainBrush>) => void;
   setGeometryStyle: (changes: Partial<EditorState['geometryStyle']>) => void;
+  setTextDraft: (changes: Partial<EditorState['textDraft']>) => void;
+  setLocationDraft: (changes: Partial<EditorState['locationDraft']>) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setSaveStatus: (saveStatus: SaveStatus) => void;
@@ -44,6 +48,8 @@ const initialState = {
   terrainKind: 'forest' as const,
   terrainBrush: { radius: 24, opacity: 0.7, spacing: 1, hardness: 0.72 },
   geometryStyle: { roadWidth: 8, riverWidth: 18, regionStrokeWidth: 3, opacity: 0.72 },
+  textDraft: { text: '新文字', fontSize: 32, align: 'center' as const },
+  locationDraft: { name: '新地点', type: 'place', summary: '', description: '', tags: '' },
   leftPanelOpen: true,
   rightPanelOpen: true,
   saveStatus: 'saved' as const,
@@ -60,6 +66,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((state) => ({ terrainBrush: { ...state.terrainBrush, ...changes } })),
   setGeometryStyle: (changes) =>
     set((state) => ({ geometryStyle: { ...state.geometryStyle, ...changes } })),
+  setTextDraft: (changes) => set((state) => ({ textDraft: { ...state.textDraft, ...changes } })),
+  setLocationDraft: (changes) => set((state) => ({ locationDraft: { ...state.locationDraft, ...changes } })),
   toggleLeftPanel: () => set((state) => ({ leftPanelOpen: !state.leftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ rightPanelOpen: !state.rightPanelOpen })),
   setSaveStatus: (saveStatus) => set({ saveStatus }),

@@ -31,7 +31,13 @@ function freshLayer(documentId: string, order: number, type: MapLayerType): MapL
           ? '区域'
           : type === 'raster'
             ? '地形'
-            : '图章',
+            : type === 'text'
+              ? '文字'
+              : type === 'marker'
+                ? '地点标记'
+                : type === 'group'
+                  ? '图层组'
+                  : '图章',
     type,
     order,
     visible: true,
@@ -58,6 +64,7 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
   const [deletePolicy, setDeletePolicy] = useState<'delete' | 'move'>('delete');
   const [targetLayerId, setTargetLayerId] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const layers = useMemo(() => Object.values(layersById), [layersById]);
   const items = useMemo(() => flattenLayerTree(layers), [layers]);
   const activeLayer = activeLayerId ? layersById[activeLayerId] : undefined;
@@ -88,7 +95,9 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     }
   };
 
-  const createLayer = (type: 'stamp' | 'vector-path' | 'region' | 'raster') => {
+  const createLayer = (
+    type: 'stamp' | 'vector-path' | 'region' | 'raster' | 'text' | 'marker' | 'group',
+  ) => {
     if (!document) return;
     const rootCount = layers.filter((layer) => layer.parentId === null).length;
     const layer = freshLayer(document.id, rootCount, type);
@@ -96,6 +105,7 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     setActiveLayer(layer.id);
     setRenamingId(layer.id);
     setRenameValue(layer.name);
+    setCreateMenuOpen(false);
   };
 
   const commitRename = (layer: MapLayer) => {
@@ -205,19 +215,40 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     <>
       <div className="layer-actions">
         <span>{layers.length} 个图层</span>
-        <div className="layer-create-actions">
-          <button onClick={() => createLayer('stamp')}>
-            <Icon name="plus" /> 图章
+        <div className="layer-create-menu">
+          <button
+            className="layer-create-trigger"
+            aria-expanded={createMenuOpen}
+            aria-haspopup="menu"
+            onClick={() => setCreateMenuOpen((open) => !open)}
+          >
+            <Icon name="plus" /> 新增图层
           </button>
-          <button onClick={() => createLayer('vector-path')}>
-            <Icon name="path" /> 路径
-          </button>
-          <button onClick={() => createLayer('region')}>
-            <Icon name="region" /> 区域
-          </button>
-          <button onClick={() => createLayer('raster')}>
-            <Icon name="brush" /> 地形
-          </button>
+          {createMenuOpen && (
+            <div className="layer-create-options" role="menu" aria-label="选择图层分类">
+              <button role="menuitem" onClick={() => createLayer('stamp')}>
+                <Icon name="stamp" /><span><strong>图章</strong><small>放置山脉、树木和城镇图章</small></span>
+              </button>
+              <button role="menuitem" onClick={() => createLayer('vector-path')}>
+                <Icon name="path" /><span><strong>路径</strong><small>绘制道路和河流</small></span>
+              </button>
+              <button role="menuitem" onClick={() => createLayer('region')}>
+                <Icon name="region" /><span><strong>区域</strong><small>绘制封闭区域</small></span>
+              </button>
+              <button role="menuitem" onClick={() => createLayer('raster')}>
+                <Icon name="brush" /><span><strong>地形</strong><small>使用地形笔刷绘制</small></span>
+              </button>
+              <button role="menuitem" onClick={() => createLayer('text')}>
+                <Icon name="text" /><span><strong>文字</strong><small>添加地图名称和注释</small></span>
+              </button>
+              <button role="menuitem" onClick={() => createLayer('marker')}>
+                <Icon name="map" /><span><strong>地点标记</strong><small>添加地点资料及标记</small></span>
+              </button>
+              <button role="menuitem" onClick={() => createLayer('group')}>
+                <Icon name="layers" /><span><strong>图层组</strong><small>整理相关图层</small></span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <p className="layer-group-note">组层级按缩进显示；P8 暂不提供跨组拖放。</p>
