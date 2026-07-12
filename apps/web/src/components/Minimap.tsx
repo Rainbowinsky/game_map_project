@@ -34,6 +34,7 @@ function hexColor(value: string, alpha = 1): string {
 }
 
 function terrainColor(object: Extract<MapObject, { type: 'terrain-stroke' }>, theme: ThemeTokens) {
+  if (object.brush.color) return object.brush.color;
   return object.terrainKind === 'water'
     ? theme.river
     : object.terrainKind === 'forest'

@@ -6,6 +6,7 @@ import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { Icon } from '../components/Icon.js';
 import { LoadingState } from '../components/LoadingState.js';
+import { UserConfigDialog } from '../components/UserConfigDialog.js';
 import { api, readableError } from '../services/api-client.js';
 import { useSessionStore } from '../stores/session-store.js';
 
@@ -22,6 +23,7 @@ export function ProjectsPage() {
   const clearSession = useSessionStore((state) => state.clearSession);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [userConfigOpen, setUserConfigOpen] = useState(false);
   const [form, setForm] = useState({ projectName: '', mapName: '', width: 24000, height: 16000 });
   const projects = useQuery({
     queryKey: ['projects'],
@@ -72,9 +74,9 @@ export function ProjectsPage() {
           </a>
         </nav>
         <div className="dashboard-nav__bottom">
-          <button>
+          <button onClick={() => setUserConfigOpen(true)}>
             <Icon name="settings" />
-            设置
+            用户配置
           </button>
           <p>ATLAS / 01</p>
         </div>
@@ -102,6 +104,14 @@ export function ProjectsPage() {
               <div className="profile-menu popover-enter">
                 <strong>{session.user.displayName}</strong>
                 <span>{session.user.email}</span>
+                <button
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setUserConfigOpen(true);
+                  }}
+                >
+                  管理笔刷与素材
+                </button>
                 <button
                   onClick={() => {
                     clearSession();
@@ -275,6 +285,7 @@ export function ProjectsPage() {
           </section>
         </div>
       )}
+      <UserConfigDialog open={userConfigOpen} onClose={() => setUserConfigOpen(false)} />
     </main>
   );
 }

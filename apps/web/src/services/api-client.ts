@@ -88,6 +88,18 @@ const assetListSchema = z
 const assetCategoryListSchema = z.object({ items: z.array(assetCategorySchema) }).strict();
 export type Asset = z.infer<typeof assetSchema>;
 export type AssetCategory = z.infer<typeof assetCategorySchema>;
+export const userBrushSchema = z
+  .object({
+    id: z.string().uuid(),
+    ownerId: z.string().uuid(),
+    name: z.string(),
+    color: z.string().regex(/^#[0-9A-F]{6}$/),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .strict();
+const userBrushListSchema = z.object({ items: z.array(userBrushSchema) }).strict();
+export type UserBrush = z.infer<typeof userBrushSchema>;
 
 export class ApiError extends Error {
   constructor(
@@ -259,6 +271,29 @@ export const api = {
   deleteAssetCategory: async (accessToken: string, categoryId: string): Promise<void> => {
     await apiNoContent(`/asset-categories/${categoryId}`, accessToken);
   },
+  listUserBrushes: (accessToken: string) =>
+    apiRequest('/user-config/brushes', userBrushListSchema, {}, accessToken),
+  createUserBrush: (accessToken: string, input: { name: string; color: string }) =>
+    apiRequest(
+      '/user-config/brushes',
+      userBrushSchema,
+      { method: 'POST', body: JSON.stringify(input) },
+      accessToken,
+    ),
+  updateUserBrush: (
+    accessToken: string,
+    brushId: string,
+    input: { name?: string; color?: string },
+  ) =>
+    apiRequest(
+      `/user-config/brushes/${brushId}`,
+      userBrushSchema,
+      { method: 'PATCH', body: JSON.stringify(input) },
+      accessToken,
+    ),
+  deleteUserBrush: async (accessToken: string, brushId: string): Promise<void> => {
+    await apiNoContent(`/user-config/brushes/${brushId}`, accessToken);
+  },
   applyOperations: (
     accessToken: string,
     mapId: string,
@@ -302,6 +337,7 @@ export function readableError(error: unknown): string {
     INVALID_ASSET_FILE: '图片格式、内容或尺寸不符合素材要求。',
     ASSET_IN_USE: '这个素材仍被地图或地点引用，暂时不能删除。',
     ASSET_CATEGORY_NAME_CONFLICT: '已有同名素材分类。',
+    BRUSH_NAME_CONFLICT: '已有同名笔刷，请换一个名字。',
   };
   return messages[error.code] ?? error.message;
 }

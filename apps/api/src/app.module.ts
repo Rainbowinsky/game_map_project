@@ -16,6 +16,7 @@ import { OwnershipModule } from './ownership/ownership.module.js';
 import { MapsModule } from './maps/maps.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { AssetsModule } from './assets/assets.module.js';
+import { UserConfigModule } from './user-config/user-config.module.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { AssetsModule } from './assets/assets.module.js';
     MapsModule,
     StorageModule,
     AssetsModule,
+    UserConfigModule,
     ThrottlerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [APP_CONFIG],

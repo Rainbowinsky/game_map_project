@@ -39,5 +39,6 @@ export async function cleanTestDatabase(prisma: PrismaService, databaseUrl: stri
   await prisma.project.deleteMany();
   await prisma.asset.deleteMany();
   await prisma.assetCategory.deleteMany();
+  await prisma.userBrush.deleteMany();
   await prisma.user.deleteMany();
 }

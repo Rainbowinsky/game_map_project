@@ -26,7 +26,8 @@ describe('AccessTokenService', () => {
     );
 
     await expect(verifier.verify(token)).rejects.toThrow();
-    await expect(issuer.verify(`${token.slice(0, -1)}x`)).rejects.toThrow();
+    const tamperedSuffix = token.endsWith('x') ? 'y' : 'x';
+    await expect(issuer.verify(`${token.slice(0, -1)}${tamperedSuffix}`)).rejects.toThrow();
   });
 
   it('rejects an expired token', async () => {

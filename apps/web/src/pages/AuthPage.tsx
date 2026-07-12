@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type PointerEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Navigate, useNavigate } from 'react-router-dom';
 
@@ -8,6 +8,7 @@ import { api, readableError } from '../services/api-client.js';
 import { useSessionStore } from '../stores/session-store.js';
 
 export function AuthPage() {
+  const storyRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
   const session = useSessionStore((state) => state.session);
   const setSession = useSessionStore((state) => state.setSession);
@@ -30,9 +31,52 @@ export function AuthPage() {
     event.preventDefault();
     mutation.mutate();
   };
+  const moveStory = (event: PointerEvent<HTMLElement>) => {
+    const story = storyRef.current;
+    if (!story || event.pointerType === 'touch') return;
+    const bounds = story.getBoundingClientRect();
+    const x = event.clientX - bounds.left - bounds.width / 2;
+    const y = event.clientY - bounds.top - bounds.height / 2;
+    story.style.setProperty('--auth-pointer-x', `${x}px`);
+    story.style.setProperty('--auth-pointer-y', `${y}px`);
+    story.style.setProperty('--auth-pointer-rx', `${(y / bounds.height) * -5}deg`);
+    story.style.setProperty('--auth-pointer-ry', `${(x / bounds.width) * 7}deg`);
+    story.style.setProperty('--auth-shift-x', `${x * 0.025}px`);
+    story.style.setProperty('--auth-shift-y', `${y * 0.025}px`);
+    story.style.setProperty('--auth-shift-x-near', `${x * -0.04}px`);
+    story.style.setProperty('--auth-shift-y-near', `${y * -0.04}px`);
+    story.style.setProperty('--auth-glow-x', `${event.clientX - bounds.left}px`);
+    story.style.setProperty('--auth-glow-y', `${event.clientY - bounds.top}px`);
+  };
+  const resetStory = () => {
+    const story = storyRef.current;
+    if (!story) return;
+    story.style.setProperty('--auth-pointer-x', '0px');
+    story.style.setProperty('--auth-pointer-y', '0px');
+    story.style.setProperty('--auth-pointer-rx', '0deg');
+    story.style.setProperty('--auth-pointer-ry', '0deg');
+    story.style.setProperty('--auth-shift-x', '0px');
+    story.style.setProperty('--auth-shift-y', '0px');
+    story.style.setProperty('--auth-shift-x-near', '0px');
+    story.style.setProperty('--auth-shift-y-near', '0px');
+  };
   return (
     <main className="auth-page route-enter">
-      <section className="auth-story">
+      <section
+        ref={storyRef}
+        className="auth-story"
+        onPointerMove={moveStory}
+        onPointerLeave={resetStory}
+      >
+        <div className="auth-story__glow" aria-hidden="true" />
+        <div className="auth-topography" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+        </div>
         <Brand />
         <div className="auth-story__copy">
           <p className="kicker">PRIVATE CARTOGRAPHY STUDIO</p>
@@ -52,6 +96,33 @@ export function AuthPage() {
         </div>
         <div className="contour contour--one" />
         <div className="contour contour--two" />
+        <div className="auth-glass-card auth-glass-card--signal" aria-hidden="true">
+          <header>
+            <span>
+              <i /> LIVE TERRAIN
+            </span>
+            <b>04</b>
+          </header>
+          <div className="auth-signal-map">
+            <i />
+            <i />
+            <i />
+            <span />
+          </div>
+          <footer>
+            <span>COASTLINE SCAN</span>
+            <b>72%</b>
+          </footer>
+        </div>
+        <div className="auth-glass-card auth-glass-card--note" aria-hidden="true">
+          <span>FIELD NOTE · 31°14′</span>
+          <strong>
+            每个世界，
+            <br />
+            都始于第一笔。
+          </strong>
+          <i />
+        </div>
         <div className="compass">
           <span>N</span>
           <i />

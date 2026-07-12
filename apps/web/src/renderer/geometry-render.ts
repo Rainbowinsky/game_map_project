@@ -62,6 +62,7 @@ export function drawRegion(graphics: Graphics, object: RegionMapObject, tokens: 
 }
 
 function terrainColor(object: TerrainStrokeMapObject, tokens: ThemeTokens): number {
+  if (object.brush.color) return colorToNumber(object.brush.color);
   const value =
     object.terrainKind === 'water'
       ? tokens.river
@@ -108,12 +109,20 @@ export function drawTerrainStroke(
   });
 }
 
-export function createGeometryGraphics(object: MapObject, tokens: ThemeTokens): Graphics | Text | null {
+export function createGeometryGraphics(
+  object: MapObject,
+  tokens: ThemeTokens,
+): Graphics | Text | null {
   if (object.type === 'text') {
     const text = new Text({
       text: object.text,
       anchor: { x: object.align === 'left' ? 0 : object.align === 'right' ? 1 : 0.5, y: 0.5 },
-      style: { fontFamily: tokens.defaultFontFamily, fontSize: object.fontSize, fill: tokens.text, align: object.align },
+      style: {
+        fontFamily: tokens.defaultFontFamily,
+        fontSize: object.fontSize,
+        fill: tokens.text,
+        align: object.align,
+      },
     });
     text.position.set(object.x, object.y);
     text.rotation = object.rotation;
@@ -125,11 +134,14 @@ export function createGeometryGraphics(object: MapObject, tokens: ThemeTokens): 
   if (object.type === 'marker') {
     const graphics = new Graphics();
     const radius = 14;
-    graphics.circle(object.x, object.y - radius * 0.45, radius)
+    graphics
+      .circle(object.x, object.y - radius * 0.45, radius)
       .fill({ color: colorToNumber(tokens.coast), alpha: object.opacity })
       .stroke({ color: colorToNumber(tokens.text), width: 2 })
-      .moveTo(object.x - 7, object.y + 5).lineTo(object.x, object.y + 18)
-      .lineTo(object.x + 7, object.y + 5).closePath()
+      .moveTo(object.x - 7, object.y + 5)
+      .lineTo(object.x, object.y + 18)
+      .lineTo(object.x + 7, object.y + 5)
+      .closePath()
       .fill({ color: colorToNumber(tokens.coast), alpha: object.opacity });
     graphics.zIndex = object.zIndex;
     graphics.visible = object.visible;

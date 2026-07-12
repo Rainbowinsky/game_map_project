@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import type { MapObject, TerrainKind } from '@fantasy-map/map-model';
+import type { MapObject } from '@fantasy-map/map-model';
 
 import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
@@ -14,6 +14,8 @@ import { LocationPanel } from '../components/LocationPanel.js';
 import { AssetLibraryPanel } from '../components/AssetLibraryPanel.js';
 import { Minimap } from '../components/Minimap.js';
 import { ToolSettingsPanel, type ToolPanelPosition } from '../components/ToolSettingsPanel.js';
+import { UserConfigDialog } from '../components/UserConfigDialog.js';
+import { TerrainBrushPicker } from '../components/TerrainBrushPicker.js';
 import {
   PixiCanvas,
   type CanvasTelemetry,
@@ -74,12 +76,10 @@ export function EditorPage() {
   const clearMap = useMapStore((state) => state.clear);
   const tool = useEditorStore((state) => state.tool);
   const activeStampAssetId = useEditorStore((state) => state.activeStampAssetId);
-  const terrainKind = useEditorStore((state) => state.terrainKind);
   const terrainBrush = useEditorStore((state) => state.terrainBrush);
   const geometryStyle = useEditorStore((state) => state.geometryStyle);
   const textDraft = useEditorStore((state) => state.textDraft);
   const locationDraft = useEditorStore((state) => state.locationDraft);
-  const setTerrainKind = useEditorStore((state) => state.setTerrainKind);
   const setTerrainBrush = useEditorStore((state) => state.setTerrainBrush);
   const setGeometryStyle = useEditorStore((state) => state.setGeometryStyle);
   const setTextDraft = useEditorStore((state) => state.setTextDraft);
@@ -90,6 +90,7 @@ export function EditorPage() {
   const toggleLeftPanel = useEditorStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
   const [rightTab, setRightTab] = useState<'layers' | 'properties' | 'locations'>('layers');
+  const [userConfigOpen, setUserConfigOpen] = useState(false);
   const [toolControlsOpen, setToolControlsOpen] = useState(true);
   const [toolPanelPosition, setToolPanelPosition] = useState<ToolPanelPosition>({ x: 16, y: 16 });
   const stageRef = useRef<HTMLElement>(null);
@@ -300,7 +301,14 @@ export function EditorPage() {
             ))}
           </select>
         </label>
-        <button className="avatar avatar--small">{session.user.displayName.slice(0, 1)}</button>
+        <button
+          className="avatar avatar--small"
+          onClick={() => setUserConfigOpen(true)}
+          aria-label="打开用户配置"
+          title="用户配置"
+        >
+          {session.user.displayName.slice(0, 1)}
+        </button>
       </header>
       <aside
         className={`editor-assets panel-slide ${leftPanelOpen ? 'is-open' : ''}`}
@@ -365,19 +373,7 @@ export function EditorPage() {
               <strong>{tool === 'terrain-eraser' ? '整笔擦除' : '像素级绘制'}</strong>
             </label>
             {tool === 'terrain-brush' && (
-              <label>
-                <span>地形</span>
-                <select
-                  value={terrainKind}
-                  onChange={(event) => setTerrainKind(event.target.value as TerrainKind)}
-                >
-                  <option value="water">水域</option>
-                  <option value="forest">森林</option>
-                  <option value="mountain">山地</option>
-                  <option value="desert">沙漠</option>
-                  <option value="grassland">草地</option>
-                </select>
-              </label>
+              <TerrainBrushPicker onManage={() => setUserConfigOpen(true)} />
             )}
             <label>
               <span>
@@ -800,6 +796,7 @@ export function EditorPage() {
           </section>
         </div>
       )}
+      <UserConfigDialog open={userConfigOpen} onClose={() => setUserConfigOpen(false)} />
     </main>
   );
 }

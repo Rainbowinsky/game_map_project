@@ -94,6 +94,8 @@ export const terrainBrushSchema = z
     opacity: z.number().finite().min(0.01).max(1),
     spacing: z.number().finite().positive().max(20_000),
     hardness: z.number().finite().min(0).max(1),
+    color: colorSchema.optional(),
+    name: z.string().trim().min(1).max(60).optional(),
   })
   .strict();
 

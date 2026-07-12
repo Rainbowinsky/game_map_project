@@ -34,6 +34,21 @@ model User {
   projects        Project[]
   assets          Asset[]
   assetCategories AssetCategory[]
+  brushes         UserBrush[]
+}
+
+model UserBrush {
+  id        String   @id @default(uuid()) @db.Char(36)
+  ownerId   String   @db.Char(36)
+  name      String   @db.VarChar(60)
+  color     String   @db.Char(7)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, name])
+  @@index([ownerId, createdAt])
 }
 
 model Project {

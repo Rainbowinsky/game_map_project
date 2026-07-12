@@ -296,7 +296,7 @@ function createTerrainObject(
     points,
     randomSeed: crypto.getRandomValues(new Uint32Array(1))[0],
     styleToken: `terrain.${terrainKind}`,
-    name: `地形-${terrainKind}`,
+    name: `地形-${brush.name ?? terrainKind}`,
     ...center,
     rotation: 0,
     scaleX: 1,
