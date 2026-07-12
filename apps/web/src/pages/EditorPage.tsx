@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Navigate, useParams } from 'react-router-dom';
-import type { MapObject } from '@fantasy-map/map-model';
+import type { MapObject, TerrainKind } from '@fantasy-map/map-model';
 
 import { Brand } from '../components/Brand.js';
 import { ErrorState } from '../components/ErrorState.js';
@@ -11,6 +11,7 @@ import { LoadingState } from '../components/LoadingState.js';
 import { LayerPanel } from '../components/LayerPanel.js';
 import { ObjectInspector } from '../components/ObjectInspector.js';
 import { StampAssetPanel } from '../components/StampAssetPanel.js';
+import { ToolSettingsPanel, type ToolPanelPosition } from '../components/ToolSettingsPanel.js';
 import {
   PixiCanvas,
   type CanvasTelemetry,
@@ -37,13 +38,15 @@ import { themeRegistry } from '../themes/ThemeRegistry.js';
 
 const toolInfo: {
   id: EditorTool;
-  icon: 'select' | 'pan' | 'stamp' | 'path' | 'region';
+  icon: 'select' | 'pan' | 'stamp' | 'brush' | 'eraser' | 'path' | 'region';
   label: string;
   key: string;
 }[] = [
   { id: 'select', icon: 'select', label: '选择', key: 'V' },
   { id: 'pan', icon: 'pan', label: '平移', key: 'H' },
   { id: 'stamp', icon: 'stamp', label: '图章', key: 'S' },
+  { id: 'terrain-brush', icon: 'brush', label: '地形笔刷', key: 'B' },
+  { id: 'terrain-eraser', icon: 'eraser', label: '地形橡皮擦', key: 'E' },
   { id: 'road', icon: 'path', label: '道路', key: 'R' },
   { id: 'river', icon: 'path', label: '河流', key: 'W' },
   { id: 'region', icon: 'region', label: '区域', key: 'P' },
@@ -66,12 +69,21 @@ export function EditorPage() {
   const clearMap = useMapStore((state) => state.clear);
   const tool = useEditorStore((state) => state.tool);
   const activeStampAssetId = useEditorStore((state) => state.activeStampAssetId);
+  const terrainKind = useEditorStore((state) => state.terrainKind);
+  const terrainBrush = useEditorStore((state) => state.terrainBrush);
+  const geometryStyle = useEditorStore((state) => state.geometryStyle);
+  const setTerrainKind = useEditorStore((state) => state.setTerrainKind);
+  const setTerrainBrush = useEditorStore((state) => state.setTerrainBrush);
+  const setGeometryStyle = useEditorStore((state) => state.setGeometryStyle);
   const setTool = useEditorStore((state) => state.setTool);
   const leftPanelOpen = useEditorStore((state) => state.leftPanelOpen);
   const rightPanelOpen = useEditorStore((state) => state.rightPanelOpen);
   const toggleLeftPanel = useEditorStore((state) => state.toggleLeftPanel);
   const toggleRightPanel = useEditorStore((state) => state.toggleRightPanel);
   const [rightTab, setRightTab] = useState<'layers' | 'properties'>('layers');
+  const [toolControlsOpen, setToolControlsOpen] = useState(true);
+  const [toolPanelPosition, setToolPanelPosition] = useState<ToolPanelPosition>({ x: 16, y: 16 });
+  const stageRef = useRef<HTMLElement>(null);
   const canvasHandle = useRef<PixiCanvasHandle | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -187,6 +199,8 @@ export function EditorPage() {
           v: 'select',
           h: 'pan',
           s: 'stamp',
+          b: 'terrain-brush',
+          e: 'terrain-eraser',
           r: 'road',
           w: 'river',
           p: 'region',
@@ -311,7 +325,7 @@ export function EditorPage() {
           </span>
         </button>
       </nav>
-      <section className="editor-stage" aria-label="地图工作区">
+      <section ref={stageRef} className="editor-stage" aria-label="地图工作区">
         <PixiCanvas
           document={document}
           tool={tool}
@@ -322,6 +336,173 @@ export function EditorPage() {
           onInteractionError={setInteractionError}
         />
         <div className="stage-grain" />
+        {(tool === 'terrain-brush' || tool === 'terrain-eraser') && (
+          <ToolSettingsPanel
+            containerRef={stageRef}
+            title={tool === 'terrain-eraser' ? '地形橡皮擦设置' : '地形笔刷设置'}
+            open={toolControlsOpen}
+            position={toolPanelPosition}
+            onOpenChange={setToolControlsOpen}
+            onPositionChange={setToolPanelPosition}
+          >
+            <label>
+              <span>模式</span>
+              <strong>{tool === 'terrain-eraser' ? '整笔擦除' : '像素级绘制'}</strong>
+            </label>
+            {tool === 'terrain-brush' && (
+              <label>
+                <span>地形</span>
+                <select
+                  value={terrainKind}
+                  onChange={(event) => setTerrainKind(event.target.value as TerrainKind)}
+                >
+                  <option value="water">水域</option>
+                  <option value="forest">森林</option>
+                  <option value="mountain">山地</option>
+                  <option value="desert">沙漠</option>
+                  <option value="grassland">草地</option>
+                </select>
+              </label>
+            )}
+            <label>
+              <span>
+                半径 <b>{terrainBrush.radius}</b>
+              </span>
+              <input
+                type="range"
+                min="1"
+                max="256"
+                step="1"
+                value={terrainBrush.radius}
+                onChange={(event) => setTerrainBrush({ radius: Number(event.target.value) })}
+              />
+            </label>
+            {tool === 'terrain-brush' && (
+              <>
+                <label>
+                  <span>
+                    不透明度 <b>{Math.round(terrainBrush.opacity * 100)}%</b>
+                  </span>
+                  <input
+                    type="range"
+                    min="0.01"
+                    max="1"
+                    step="0.01"
+                    value={terrainBrush.opacity}
+                    onChange={(event) => setTerrainBrush({ opacity: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>
+                    硬度 <b>{Math.round(terrainBrush.hardness * 100)}%</b>
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={terrainBrush.hardness}
+                    onChange={(event) => setTerrainBrush({ hardness: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>
+                    采样间距 <b>{terrainBrush.spacing}</b>
+                  </span>
+                  <input
+                    type="range"
+                    min="0.25"
+                    max="32"
+                    step="0.25"
+                    value={terrainBrush.spacing}
+                    onChange={(event) => setTerrainBrush({ spacing: Number(event.target.value) })}
+                  />
+                </label>
+              </>
+            )}
+            <small>
+              {tool === 'terrain-eraser'
+                ? '拖动经过任意地形笔迹时，将删除整条笔迹；一次拖动可撤销一次。'
+                : '输入按屏幕像素捕获，并按世界距离重采样；松开指针后才写入历史与保存队列。'}
+            </small>
+          </ToolSettingsPanel>
+        )}
+        {(tool === 'road' || tool === 'river' || tool === 'region') && (
+          <ToolSettingsPanel
+            containerRef={stageRef}
+            title="绘图设置"
+            open={toolControlsOpen}
+            position={toolPanelPosition}
+            onOpenChange={setToolControlsOpen}
+            onPositionChange={setToolPanelPosition}
+          >
+            <label>
+              <span>绘制方式</span>
+              <strong>{tool === 'region' ? '自由套索区域' : '自由手绘路径'}</strong>
+            </label>
+            {tool === 'road' && (
+              <label>
+                <span>
+                  道路粗细 <b>{geometryStyle.roadWidth}</b>
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="80"
+                  step="1"
+                  value={geometryStyle.roadWidth}
+                  onChange={(event) => setGeometryStyle({ roadWidth: Number(event.target.value) })}
+                />
+              </label>
+            )}
+            {tool === 'river' && (
+              <label>
+                <span>
+                  河流粗细 <b>{geometryStyle.riverWidth}</b>
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="120"
+                  step="1"
+                  value={geometryStyle.riverWidth}
+                  onChange={(event) => setGeometryStyle({ riverWidth: Number(event.target.value) })}
+                />
+              </label>
+            )}
+            {tool === 'region' && (
+              <label>
+                <span>
+                  边界粗细 <b>{geometryStyle.regionStrokeWidth}</b>
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="40"
+                  step="1"
+                  value={geometryStyle.regionStrokeWidth}
+                  onChange={(event) =>
+                    setGeometryStyle({ regionStrokeWidth: Number(event.target.value) })
+                  }
+                />
+              </label>
+            )}
+            <label>
+              <span>
+                不透明度 <b>{Math.round(geometryStyle.opacity * 100)}%</b>
+              </span>
+              <input
+                type="range"
+                min="0.05"
+                max="1"
+                step="0.05"
+                value={geometryStyle.opacity}
+                onChange={(event) => setGeometryStyle({ opacity: Number(event.target.value) })}
+              />
+            </label>
+            <small>单击开始，移动鼠标按真实轨迹绘制，再次单击完成；Esc 取消。</small>
+          </ToolSettingsPanel>
+        )}
         {interactionError && (
           <div className="stage-error" role="alert">
             {interactionError}

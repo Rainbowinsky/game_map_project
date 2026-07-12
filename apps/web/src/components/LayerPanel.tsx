@@ -24,7 +24,14 @@ function freshLayer(documentId: string, order: number, type: MapLayerType): MapL
     id: crypto.randomUUID(),
     mapId: documentId,
     parentId: null,
-    name: type === 'vector-path' ? '路径' : type === 'region' ? '区域' : '图章',
+    name:
+      type === 'vector-path'
+        ? '路径'
+        : type === 'region'
+          ? '区域'
+          : type === 'raster'
+            ? '地形'
+            : '图章',
     type,
     order,
     visible: true,
@@ -81,7 +88,7 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     }
   };
 
-  const createLayer = (type: 'stamp' | 'vector-path' | 'region') => {
+  const createLayer = (type: 'stamp' | 'vector-path' | 'region' | 'raster') => {
     if (!document) return;
     const rootCount = layers.filter((layer) => layer.parentId === null).length;
     const layer = freshLayer(document.id, rootCount, type);
@@ -207,6 +214,9 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
           </button>
           <button onClick={() => createLayer('region')}>
             <Icon name="region" /> 区域
+          </button>
+          <button onClick={() => createLayer('raster')}>
+            <Icon name="brush" /> 地形
           </button>
         </div>
       </div>

@@ -1324,6 +1324,172 @@ svg {
   cursor: crosshair;
 }
 
+.pixi-host.is-terrain-tool {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.terrain-controls {
+  position: absolute;
+  left: 1rem;
+  top: 1rem;
+  z-index: 8;
+  width: min(290px, calc(100% - 2rem));
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(107, 89, 66, 0.25);
+  border-radius: 12px;
+  background: rgba(255, 252, 241, 0.94);
+  box-shadow: 0 8px 28px rgba(44, 37, 28, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.terrain-controls label {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.78rem;
+}
+
+.terrain-controls label > span {
+  color: var(--ink-muted);
+}
+.terrain-controls input[type='range'],
+.terrain-controls select {
+  width: 100%;
+}
+.terrain-controls small {
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.tool-settings-panel {
+  left: var(--tool-panel-x, 1rem);
+  top: var(--tool-panel-y, 1rem);
+  transform-origin: top left;
+  transition:
+    opacity 220ms var(--ease),
+    transform 260ms var(--ease),
+    visibility 0s linear;
+}
+
+.tool-settings-panel.is-expanded {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.tool-settings-panel.is-collapsed {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-0.45rem, -0.35rem) scale(0.96);
+  transition:
+    opacity 180ms var(--ease),
+    transform 220ms var(--ease),
+    visibility 0s linear 220ms;
+}
+
+.tool-settings-panel__header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin: -0.15rem -0.15rem 0;
+  color: var(--ink);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.tool-settings-panel__header:active {
+  cursor: grabbing;
+}
+
+.tool-settings-panel__header > span {
+  color: var(--ink-muted);
+  font-size: 1rem;
+}
+
+.tool-settings-panel__header > strong {
+  font-size: 0.78rem;
+}
+
+.tool-settings-panel__header button {
+  width: 1.8rem;
+  height: 1.8rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(107, 89, 66, 0.2);
+  border-radius: 8px;
+  color: var(--ink-muted);
+  background: rgba(255, 255, 255, 0.48);
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.tool-settings-panel__header button:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-1px);
+}
+
+.tool-settings-panel__header button svg {
+  width: 1rem;
+  transform: rotate(180deg);
+}
+
+.tool-settings-reopen {
+  position: absolute;
+  top: var(--tool-panel-y, 1rem);
+  left: var(--tool-panel-x, 1rem);
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.58rem 0.72rem;
+  border: 1px solid rgba(107, 89, 66, 0.28);
+  border-radius: 10px;
+  color: var(--ink);
+  background: rgba(255, 252, 241, 0.94);
+  box-shadow: 0 8px 24px rgba(44, 37, 28, 0.14);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  transform-origin: top left;
+  transition:
+    opacity 180ms var(--ease),
+    transform 220ms var(--ease),
+    visibility 0s linear;
+}
+
+.tool-settings-reopen svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.tool-settings-reopen.is-visible {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition-delay: 120ms;
+}
+
+.tool-settings-reopen.is-hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-0.25rem) scale(0.94);
+  transition-delay: 0s, 0s, 180ms;
+}
+
 .layer-create-actions {
   display: flex;
   gap: 0.25rem;

@@ -3,10 +3,12 @@ import type { ReactNode, SVGProps } from 'react';
 type IconName =
   | 'arrow'
   | 'back'
+  | 'brush'
   | 'chevron'
   | 'close'
   | 'command'
   | 'grid'
+  | 'eraser'
   | 'layers'
   | 'map'
   | 'menu'
@@ -34,6 +36,12 @@ const paths: Record<IconName, ReactNode> = {
       <path d="m10 17-5-5 5-5" />
     </>
   ),
+  brush: (
+    <>
+      <path d="m14 4 6 6-8.5 8.5a4.2 4.2 0 0 1-6-6L14 4Z" />
+      <path d="M4 21c2.5 0 4.5-.5 5.5-2" />
+    </>
+  ),
   chevron: <path d="m9 18 6-6-6-6" />,
   close: (
     <>
@@ -55,6 +63,12 @@ const paths: Record<IconName, ReactNode> = {
       <path d="M14 4h6v6h-6z" />
       <path d="M4 14h6v6H4z" />
       <path d="M14 14h6v6h-6z" />
+    </>
+  ),
+  eraser: (
+    <>
+      <path d="m15 4 5 5-9 9H6l-3-3L15 4Z" />
+      <path d="m11 18 4-4" />
     </>
   ),
   layers: (

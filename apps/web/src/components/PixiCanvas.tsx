@@ -6,6 +6,9 @@ import {
   type MapDocument,
   type MapObject,
   type PathKind,
+  type TerrainBrush,
+  type TerrainKind,
+  type TerrainStrokePoint,
   type ObjectTransform,
   type ScreenPoint,
   type WorldPoint,
@@ -18,6 +21,8 @@ import {
   CreateObjectCommand,
   CreatePathCommand,
   CreateRegionCommand,
+  DeleteObjectCommand,
+  DrawTerrainStrokeCommand,
   TransformObjectsCommand,
   UpdatePathGeometryCommand,
   UpdateRegionGeometryCommand,
@@ -25,6 +30,17 @@ import {
 import type { CommandManager } from '../editor/commands/CommandManager.js';
 import type { PatchEvent } from '../editor/commands/patch-bus.js';
 import { isLayerEffectivelyEditable } from '../editor/layers/layer-tree.js';
+import {
+  appendFreehandPoint,
+  finishFreehandPoints,
+  freehandPathNodes,
+  freehandRegionVertices,
+} from '../editor/geometry/freehand-geometry.js';
+import {
+  appendResampledSegment,
+  finishResampledStroke,
+  strokeIntersectsEraser,
+} from '../editor/terrain/terrain-stroke.js';
 import {
   rectFromPoints,
   selectionBounds,
@@ -87,8 +103,16 @@ type EditGesture = TransformGesture | MarqueeGesture | GeometryNodeGesture;
 
 interface DrawingGesture {
   readonly tool: 'road' | 'river' | 'region';
-  readonly points: readonly WorldPoint[];
-  readonly hover: WorldPoint;
+  readonly minimumDistance: number;
+  readonly simplifyTolerance: number;
+  points: readonly WorldPoint[];
+}
+
+interface TerrainGesture {
+  readonly mode: 'draw' | 'erase';
+  readonly terrainKind: TerrainKind;
+  readonly brush: TerrainBrush;
+  points: TerrainStrokePoint[];
 }
 
 function localPoint(
@@ -124,6 +148,21 @@ function editableGeometryLayerId(type: 'vector-path' | 'region'): string | null 
   );
 }
 
+function editableTerrainLayerId(): string | null {
+  const { activeLayerId } = useEditorStore.getState();
+  const { layersById } = useMapStore.getState();
+  const active = activeLayerId ? layersById[activeLayerId] : undefined;
+  if (active?.type === 'raster' && isLayerEffectivelyEditable(active.id, layersById))
+    return active.id;
+  return (
+    Object.values(layersById)
+      .filter(
+        (layer) => layer.type === 'raster' && isLayerEffectivelyEditable(layer.id, layersById),
+      )
+      .sort((left, right) => right.order - left.order)[0]?.id ?? null
+  );
+}
+
 function clampToMap(document: MapDocument, point: WorldPoint): WorldPoint {
   return {
     x: Math.max(0, Math.min(document.width, point.x)),
@@ -142,6 +181,7 @@ function createGeometryObject(
   if (!layerId)
     throw new Error(`请先创建或解锁一个可编辑的${tool === 'region' ? '区域' : '路径'}图层。`);
   const now = new Date().toISOString();
+  const style = useEditorStore.getState().geometryStyle;
   const center = {
     x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
     y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
@@ -166,7 +206,7 @@ function createGeometryObject(
     zIndex,
     visible: true,
     locked: false,
-    opacity: 1,
+    opacity: style.opacity,
     metadata: {},
     revision: 0,
     createdAt: now,
@@ -180,18 +220,66 @@ function createGeometryObject(
           vertices: points,
           fillToken: 'region.default.fill',
           strokeToken: 'region.default.stroke',
-          strokeWidth: 3,
+          strokeWidth: style.regionStrokeWidth,
         }
       : {
           ...base,
           type: 'path',
           pathKind: tool as PathKind,
-          nodes: points.map((anchor) => ({ anchor })),
+          nodes: freehandPathNodes(points),
           styleToken: `path.${tool}`,
-          widthStart: tool === 'river' ? 14 : 8,
-          widthEnd: tool === 'river' ? 24 : 8,
+          widthStart: tool === 'river' ? style.riverWidth : style.roadWidth,
+          widthEnd: tool === 'river' ? style.riverWidth : style.roadWidth,
         },
   ) as Extract<MapObject, { type: 'path' | 'region' }>;
+}
+
+function createTerrainObject(
+  document: MapDocument,
+  terrainKind: TerrainKind,
+  brush: TerrainBrush,
+  inputPoints: readonly TerrainStrokePoint[],
+): Extract<MapObject, { type: 'terrain-stroke' }> {
+  const layerId = editableTerrainLayerId();
+  if (!layerId) throw new Error('请先创建或解锁一个可编辑的地形图层。');
+  const points = inputPoints.map((point) => ({ ...point, ...clampToMap(document, point) }));
+  const center = {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+  const now = new Date().toISOString();
+  const zIndex =
+    Math.max(
+      -1,
+      ...Object.values(useMapStore.getState().objectsById)
+        .filter((object) => object.layerId === layerId)
+        .map((object) => object.zIndex),
+    ) + 1;
+  return mapObjectSchema.parse({
+    id: crypto.randomUUID(),
+    mapId: document.id,
+    layerId,
+    chunk: toChunkCoordinate(center, document.settings.chunkSize),
+    type: 'terrain-stroke',
+    terrainKind,
+    brush,
+    points,
+    randomSeed: crypto.getRandomValues(new Uint32Array(1))[0],
+    styleToken: `terrain.${terrainKind}`,
+    name: `地形-${terrainKind}`,
+    ...center,
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
+    zIndex,
+    visible: true,
+    locked: false,
+    opacity: 1,
+    metadata: {},
+    revision: 0,
+    createdAt: now,
+    updatedAt: now,
+  }) as Extract<MapObject, { type: 'terrain-stroke' }>;
 }
 
 function createStampObject(
@@ -272,6 +360,7 @@ export function PixiCanvas({
     let pointerWorld: WorldPoint | null = null;
     let gesture: EditGesture | null = null;
     let drawing: DrawingGesture | null = null;
+    let terrainGesture: TerrainGesture | null = null;
     let telemetryCamera: CameraState = { x: 0, y: 0, zoom: 1 };
     let telemetryTimer = 0;
     const renderer = new MapRenderer(initialDocument);
@@ -320,6 +409,16 @@ export function PixiCanvas({
     const unsubscribeProjection = commandManager.patches.subscribe(applyProjectionPatch);
     const unsubscribeSelection = useEditorStore.subscribe((state, previous) => {
       if (state.selection !== previous.selection) renderer.setSelection(state.selection);
+      if (state.tool !== previous.tool) {
+        toolRef.current = state.tool;
+        drawing = null;
+        terrainGesture = null;
+        gesture = null;
+        renderer.clearPreview();
+        renderer.previewGeometry(null);
+        renderer.showMarquee(null);
+        host.classList.remove('is-transforming');
+      }
     });
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const controller = new CameraController({
@@ -382,6 +481,7 @@ export function PixiCanvas({
     const cancelGesture = () => {
       gesture = null;
       drawing = null;
+      terrainGesture = null;
       renderer.clearPreview();
       renderer.previewGeometry(null);
       renderer.showMarquee(null);
@@ -389,30 +489,131 @@ export function PixiCanvas({
     };
     const previewDrawing = () => {
       if (!drawing) return renderer.previewGeometry(null);
-      const points = [...drawing.points, drawing.hover];
-      if ((drawing.tool === 'region' && points.length < 3) || points.length < 2) return;
+      if ((drawing.tool === 'region' && drawing.points.length < 3) || drawing.points.length < 2)
+        return;
       try {
-        renderer.previewGeometry(createGeometryObject(initialDocument, drawing.tool, points));
+        renderer.previewGeometry(
+          createGeometryObject(initialDocument, drawing.tool, drawing.points),
+        );
       } catch {
         // Invalid intermediate polygons keep the last valid preview.
       }
     };
-    const commitDrawing = () => {
+    const commitDrawing = (endpoint: WorldPoint) => {
       if (!drawing) return;
       const finished = drawing;
       drawing = null;
       renderer.previewGeometry(null);
+      let points = finishFreehandPoints(
+        finished.points,
+        clampToMap(initialDocument, endpoint),
+        finished.simplifyTolerance,
+      );
+      if (finished.tool === 'region' && points.length > 3) {
+        const first = points[0]!;
+        const last = points.at(-1)!;
+        if (Math.hypot(last.x - first.x, last.y - first.y) <= finished.minimumDistance * 2) {
+          points = points.slice(0, -1);
+        }
+      }
+      if (finished.tool === 'region') points = freehandRegionVertices(points);
       const minimum = finished.tool === 'region' ? 3 : 2;
-      if (finished.points.length < minimum) return;
+      if (points.length < minimum) return;
       try {
-        const object = createGeometryObject(initialDocument, finished.tool, finished.points);
+        const object = createGeometryObject(initialDocument, finished.tool, points);
         const command =
           object.type === 'path' ? new CreatePathCommand(object) : new CreateRegionCommand(object);
         if (commandManager.execute(command)) {
-          useEditorStore.getState().setSelection([object.id]);
-          useEditorStore.getState().setTool('select');
+          useEditorStore.getState().setSelection([]);
           onInteractionError?.(null);
         }
+      } catch (error) {
+        reportError(
+          finished.tool === 'region'
+            ? new Error('无法形成有效区域，请避免轮廓完全重叠后重试。')
+            : error,
+        );
+      }
+    };
+    const previewTerrainGesture = () => {
+      if (!terrainGesture || (terrainGesture.mode === 'draw' && terrainGesture.points.length < 2))
+        return renderer.previewGeometry(null);
+      if (terrainGesture.mode === 'erase') {
+        renderer.previewTerrainEraser(terrainGesture.points, terrainGesture.brush.radius);
+        return;
+      }
+      try {
+        renderer.previewGeometry(
+          createTerrainObject(
+            initialDocument,
+            terrainGesture.terrainKind,
+            terrainGesture.brush,
+            terrainGesture.points,
+          ),
+        );
+      } catch {
+        // Keep interaction responsive; commit reports schema and budget failures.
+      }
+    };
+    const addTerrainSample = (event: PointerEvent) => {
+      if (!terrainGesture) return;
+      const point = clampToMap(initialDocument, controller.screenToWorld(localPoint(event, host)));
+      const pressure = event.pointerType === 'mouse' || event.pressure === 0 ? 0.5 : event.pressure;
+      const spacing = Math.max(
+        1 / controller.getSnapshot().camera.zoom,
+        terrainGesture.brush.spacing,
+      );
+      terrainGesture.points = appendResampledSegment(
+        terrainGesture.points,
+        { ...point, pressure },
+        spacing,
+      );
+    };
+    const commitTerrainGesture = (event: PointerEvent) => {
+      if (!terrainGesture) return;
+      const finished = terrainGesture;
+      terrainGesture = null;
+      renderer.previewGeometry(null);
+      try {
+        const endpoint = clampToMap(
+          initialDocument,
+          controller.screenToWorld(localPoint(event, host)),
+        );
+        let points = finishResampledStroke(finished.points, endpoint);
+        if (points.length === 1) {
+          const pixel = 1 / controller.getSnapshot().camera.zoom;
+          const direction = endpoint.x + pixel <= initialDocument.width ? pixel : -pixel;
+          points = finishResampledStroke(
+            points,
+            clampToMap(initialDocument, { x: endpoint.x + direction, y: endpoint.y }),
+          );
+        }
+        if (finished.mode === 'draw') {
+          const object = createTerrainObject(
+            initialDocument,
+            finished.terrainKind,
+            finished.brush,
+            points,
+          );
+          if (commandManager.execute(new DrawTerrainStrokeCommand(object))) {
+            useEditorStore.getState().setSelection([object.id]);
+          }
+        } else {
+          const map = useMapStore.getState();
+          const hits = Object.values(map.objectsById).filter(
+            (object): object is Extract<MapObject, { type: 'terrain-stroke' }> =>
+              object.type === 'terrain-stroke' &&
+              !object.locked &&
+              object.visible &&
+              isLayerEffectivelyEditable(object.layerId, map.layersById) &&
+              strokeIntersectsEraser(object, points, finished.brush.radius),
+          );
+          const transaction = commandManager.beginTransaction('Erase terrain strokes');
+          for (const object of hits) transaction.add(new DeleteObjectCommand(object.id));
+          transaction.commit();
+          useEditorStore.getState().setSelection([]);
+        }
+        onInteractionError?.(null);
       } catch (error) {
         reportError(error);
       }
@@ -448,34 +649,59 @@ export function PixiCanvas({
         placeStamp(world, assetRef.current);
         return;
       }
+      if (toolRef.current === 'terrain-brush' || toolRef.current === 'terrain-eraser') {
+        event.preventDefault();
+        if (!editableTerrainLayerId()) {
+          reportError(new Error('请先创建或解锁一个可编辑的地形图层。'));
+          return;
+        }
+        const settings = useEditorStore.getState();
+        const point = clampToMap(initialDocument, world);
+        terrainGesture = {
+          mode: toolRef.current === 'terrain-brush' ? 'draw' : 'erase',
+          terrainKind: settings.terrainKind,
+          brush: { ...settings.terrainBrush },
+          points: [
+            {
+              ...point,
+              pressure:
+                event.pointerType === 'mouse' || event.pressure === 0 ? 0.5 : event.pressure,
+            },
+          ],
+        };
+        capture(event);
+        previewTerrainGesture();
+        return;
+      }
       if (
         toolRef.current === 'road' ||
         toolRef.current === 'river' ||
         toolRef.current === 'region'
       ) {
         event.preventDefault();
-        const point = clampToMap(initialDocument, world);
-        if (!drawing || drawing.tool !== toolRef.current) {
-          drawing = { tool: toolRef.current, points: [point], hover: point };
-          capture(event);
-          previewDrawing();
+        const layerType = toolRef.current === 'region' ? 'region' : 'vector-path';
+        if (!editableGeometryLayerId(layerType)) {
+          reportError(
+            new Error(
+              `请先创建或解锁一个可编辑的${toolRef.current === 'region' ? '区域' : '路径'}图层。`,
+            ),
+          );
           return;
         }
-        const first = drawing.points[0]!;
-        const last = drawing.points.at(-1)!;
-        const tolerance = 10 / controller.getSnapshot().camera.zoom;
-        const closesRegion =
-          drawing.tool === 'region' &&
-          drawing.points.length >= 3 &&
-          Math.hypot(point.x - first.x, point.y - first.y) <= tolerance;
-        const doubleClick =
-          event.detail >= 2 && Math.hypot(point.x - last.x, point.y - last.y) <= tolerance;
-        if (closesRegion || doubleClick) {
-          commitDrawing();
-        } else {
-          drawing = { ...drawing, points: [...drawing.points, point], hover: point };
-          previewDrawing();
+        const point = clampToMap(initialDocument, world);
+        if (drawing?.tool === toolRef.current) {
+          commitDrawing(point);
+          return;
         }
+        const zoom = controller.getSnapshot().camera.zoom;
+        drawing = {
+          tool: toolRef.current,
+          points: [point],
+          minimumDistance: (toolRef.current === 'region' ? 3 : 2.5) / zoom,
+          simplifyTolerance: (toolRef.current === 'region' ? 1.75 : 1.25) / zoom,
+        };
+        useEditorStore.getState().setSelection([]);
+        previewDrawing();
         return;
       }
       if (toolRef.current !== 'select') return;
@@ -531,7 +757,7 @@ export function PixiCanvas({
             ? selection
             : [hit.id];
         useEditorStore.getState().setSelection(nextSelection);
-        if (hit.type === 'path' || hit.type === 'region') return;
+        if (hit.type === 'path' || hit.type === 'region' || hit.type === 'terrain-stroke') return;
         const originals = nextSelection
           .map((objectId) => useMapStore.getState().objectsById[objectId])
           .filter((object): object is MapObject => Boolean(object));
@@ -557,7 +783,18 @@ export function PixiCanvas({
     const onPointerMove = (event: PointerEvent) => {
       const point = localPoint(event, host);
       const world = controller.screenToWorld(point);
-      if (panning && panPointer) {
+      if (terrainGesture) {
+        try {
+          const coalesced = event.getCoalescedEvents?.() ?? [];
+          const samples = coalesced.length > 0 ? coalesced : [event];
+          for (const sample of samples) addTerrainSample(sample);
+          previewTerrainGesture();
+        } catch (error) {
+          terrainGesture = null;
+          renderer.previewGeometry(null);
+          reportError(error);
+        }
+      } else if (panning && panPointer) {
         controller.panByScreen(point.x - panPointer.x, point.y - panPointer.y);
         panPointer = point;
       } else if (gesture?.kind === 'transform') {
@@ -594,7 +831,19 @@ export function PixiCanvas({
           renderer.previewGeometry(parsed.data);
         }
       } else if (drawing) {
-        drawing = { ...drawing, hover: clampToMap(initialDocument, world) };
+        const coalesced = event.getCoalescedEvents?.() ?? [];
+        const samples = coalesced.length > 0 ? coalesced : [event];
+        for (const sample of samples) {
+          const sampleWorld = clampToMap(
+            initialDocument,
+            controller.screenToWorld(localPoint(sample, host)),
+          );
+          drawing.points = appendFreehandPoint(
+            drawing.points,
+            sampleWorld,
+            drawing.minimumDistance,
+          );
+        }
         previewDrawing();
       }
       lastPointer = point;
@@ -603,7 +852,9 @@ export function PixiCanvas({
       scheduleTelemetry();
     };
     const endPointer = (event: PointerEvent) => {
-      if (panning) {
+      if (terrainGesture) {
+        commitTerrainGesture(event);
+      } else if (panning) {
         panning = false;
         panPointer = null;
         controller.flush();
@@ -649,6 +900,13 @@ export function PixiCanvas({
       }
       if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
     };
+    const cancelPointer = (event: PointerEvent) => {
+      cancelGesture();
+      panning = false;
+      panPointer = null;
+      host.classList.remove('is-panning');
+      if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
+    };
     const onDrop = (event: DragEvent) => {
       event.preventDefault();
       const assetId = event.dataTransfer?.getData('application/x-map-stamp') || assetRef.current;
@@ -667,10 +925,10 @@ export function PixiCanvas({
         event.preventDefault();
       }
       if (event.key === 'Enter' && drawing) {
-        commitDrawing();
+        commitDrawing(drawing.points.at(-1)!);
         event.preventDefault();
       }
-      if (event.key === 'Escape' && (gesture || drawing)) {
+      if (event.key === 'Escape' && (gesture || drawing || terrainGesture)) {
         cancelGesture();
         event.preventDefault();
       }
@@ -686,7 +944,7 @@ export function PixiCanvas({
     host.addEventListener('pointerdown', onPointerDown);
     host.addEventListener('pointermove', onPointerMove);
     host.addEventListener('pointerup', endPointer);
-    host.addEventListener('pointercancel', endPointer);
+    host.addEventListener('pointercancel', cancelPointer);
     host.addEventListener('drop', onDrop);
     host.addEventListener('dragover', onDragOver);
     window.addEventListener('keydown', onKeyDown);
@@ -722,7 +980,7 @@ export function PixiCanvas({
       host.removeEventListener('pointerdown', onPointerDown);
       host.removeEventListener('pointermove', onPointerMove);
       host.removeEventListener('pointerup', endPointer);
-      host.removeEventListener('pointercancel', endPointer);
+      host.removeEventListener('pointercancel', cancelPointer);
       host.removeEventListener('drop', onDrop);
       host.removeEventListener('dragover', onDragOver);
       window.removeEventListener('keydown', onKeyDown);
@@ -737,7 +995,7 @@ export function PixiCanvas({
 
   return (
     <div
-      className={`pixi-host ${tool === 'pan' ? 'is-pan-tool' : ''} ${tool === 'stamp' ? 'is-stamp-tool' : ''} ${['road', 'river', 'region'].includes(tool) ? 'is-geometry-tool' : ''}`}
+      className={`pixi-host ${tool === 'pan' ? 'is-pan-tool' : ''} ${tool === 'stamp' ? 'is-stamp-tool' : ''} ${['road', 'river', 'region'].includes(tool) ? 'is-geometry-tool' : ''} ${tool.startsWith('terrain-') ? 'is-terrain-tool' : ''}`}
       ref={hostRef}
       data-testid="pixi-host"
     />

@@ -4,6 +4,7 @@ import {
   createMapDocumentFixture,
   createPathMapObjectFixture,
   createStampMapObjectFixture,
+  createTerrainStrokeMapObjectFixture,
 } from '@fantasy-map/map-model/fixtures';
 import type { MapObject } from '@fantasy-map/map-model';
 
@@ -12,6 +13,7 @@ import { CommandManager } from './CommandManager.js';
 import {
   CreateLayerCommand,
   CreatePathCommand,
+  DrawTerrainStrokeCommand,
   DeleteLayerCommand,
   TransformObjectsCommand,
   UpdateLayerCommand,
@@ -125,6 +127,36 @@ describe('CommandManager', () => {
     manager.undo();
     expect(useMapStore.getState().objectsById[path.id]).toBeUndefined();
     expect(useMapStore.getState().layersById[path.layerId]).toBeUndefined();
+  });
+
+  it('records one terrain stroke as one history entry and one operation batch', () => {
+    const manager = loadedManager();
+    const stroke = createTerrainStrokeMapObjectFixture();
+    const sourceLayer = useMapStore.getState().document?.layers[1];
+    if (!sourceLayer) throw new Error('Expected fixture layer.');
+    const terrainLayer = {
+      ...sourceLayer,
+      id: stroke.layerId,
+      name: 'Terrain',
+      type: 'raster' as const,
+      order: 2,
+    };
+    const batches: unknown[][] = [];
+    manager.patches.subscribe((event) => batches.push([...event.operations]));
+
+    const setup = manager.beginTransaction('Create terrain layer');
+    setup.add(new CreateLayerCommand(terrainLayer));
+    setup.commit();
+    batches.length = 0;
+
+    expect(manager.execute(new DrawTerrainStrokeCommand(stroke))).toBe(true);
+    expect(manager.getSnapshot().undoDepth).toBe(2);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject([
+      { type: 'object.create', object: { type: 'terrain-stroke' } },
+    ]);
+    expect(manager.undo()).toBe(true);
+    expect(useMapStore.getState().objectsById[stroke.id]).toBeUndefined();
   });
 
   it('clears redo after a new execute', () => {

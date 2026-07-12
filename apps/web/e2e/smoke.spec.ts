@@ -384,15 +384,37 @@ test('draws and edits a road and creates a valid region', async ({ page }) => {
   });
 
   await page.getByRole('button', { name: '道路' }).click();
+  const drawingSettings = page.getByRole('group', { name: '绘图设置' });
+  await expect(drawingSettings).toContainText('单击开始');
+  const settingsHeader = page.getByTestId('tool-settings-drag-handle');
+  const beforeDrag = await drawingSettings.boundingBox();
+  const headerBounds = await settingsHeader.boundingBox();
+  if (!beforeDrag || !headerBounds) throw new Error('Drawing settings are not draggable.');
+  await page.mouse.move(headerBounds.x + 20, headerBounds.y + headerBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(headerBounds.x + 100, headerBounds.y + headerBounds.height / 2 + 45);
+  await page.mouse.up();
+  const afterDrag = await drawingSettings.boundingBox();
+  expect(afterDrag?.x).toBeGreaterThan(beforeDrag.x + 40);
+  await page.getByRole('button', { name: '收起绘图设置' }).click();
+  await expect(drawingSettings).toBeHidden();
+  const collapsedSettings = page.getByTestId('tool-settings-reopen');
+  await expect(collapsedSettings).toBeVisible();
+  await page.getByRole('button', { name: '展开绘图设置' }).click();
+  await expect(drawingSettings).toBeVisible();
+  await drawingSettings.getByRole('slider').first().fill('20');
   await canvas.dispatchEvent('pointerdown', point(0.4, 0.45));
   await canvas.dispatchEvent('pointerup', point(0.4, 0.45));
+  await canvas.dispatchEvent('pointermove', point(0.46, 0.42));
+  await canvas.dispatchEvent('pointermove', point(0.53, 0.49));
   await canvas.dispatchEvent('pointermove', point(0.6, 0.55));
   await canvas.dispatchEvent('pointerdown', point(0.6, 0.55));
   await canvas.dispatchEvent('pointerup', point(0.6, 0.55));
-  await canvas.dispatchEvent('pointerdown', { ...point(0.6, 0.55), detail: 2 });
-  await canvas.dispatchEvent('pointerup', point(0.6, 0.55));
   await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
 
+  await page.getByRole('button', { name: '选择' }).click();
+  await canvas.dispatchEvent('pointerdown', point(0.53, 0.49));
+  await canvas.dispatchEvent('pointerup', point(0.53, 0.49));
   await canvas.dispatchEvent('pointerdown', point(0.4, 0.45));
   await canvas.dispatchEvent('pointermove', point(0.43, 0.42));
   await canvas.dispatchEvent('pointerup', point(0.43, 0.42));
@@ -400,18 +422,29 @@ test('draws and edits a road and creates a valid region', async ({ page }) => {
   await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
 
   await page.getByLabel('区域', { exact: true }).click();
+  await canvas.dispatchEvent('pointerdown', point(0.35, 0.35));
+  await canvas.dispatchEvent('pointerup', point(0.35, 0.35));
   for (const [x, y] of [
+    [0.45, 0.3],
+    [0.56, 0.35],
+    [0.55, 0.48],
+    [0.43, 0.52],
     [0.35, 0.35],
-    [0.55, 0.32],
-    [0.5, 0.48],
   ] as const) {
-    await canvas.dispatchEvent('pointerdown', point(x, y));
-    await canvas.dispatchEvent('pointerup', point(x, y));
+    await canvas.dispatchEvent('pointermove', point(x, y));
   }
   await canvas.dispatchEvent('pointerdown', point(0.35, 0.35));
   await canvas.dispatchEvent('pointerup', point(0.35, 0.35));
   await expect(page.getByTestId('visible-object-count')).toContainText('2 / 2');
   await expect(page.getByTestId('save-status')).toContainText('已保存');
+
+  await page.getByRole('button', { name: '地形笔刷' }).click();
+  const terrainSettings = page.getByRole('group', { name: '地形笔刷设置' });
+  await expect(terrainSettings).toBeVisible();
+  await page.getByRole('button', { name: '收起地形笔刷设置' }).click();
+  await expect(terrainSettings).toBeHidden();
+  await page.getByRole('button', { name: '展开地形笔刷设置' }).click();
+  await expect(terrainSettings).toBeVisible();
 });
 
 test('recovers an offline edit from IndexedDB and saves it after reload', async ({ page }) => {

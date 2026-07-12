@@ -11,7 +11,7 @@ import {
 import { objectBounds, rectsIntersect } from '../editor/selection/geometry.js';
 import type { AssetRegistry, TextureLease } from './AssetRegistry.js';
 import type { RendererProjection } from './RendererProjection.js';
-import { drawPath, drawRegion } from './geometry-render.js';
+import { drawPath, drawRegion, drawTerrainStroke } from './geometry-render.js';
 
 interface ObjectView {
   readonly display: Sprite | Graphics;
@@ -62,7 +62,11 @@ export class ObjectProjection {
       if (!ids.has(objectId)) this.remove(objectId, view);
     }
     const projected = objects.filter(
-      (object) => isStampMapObject(object) || object.type === 'path' || object.type === 'region',
+      (object) =>
+        isStampMapObject(object) ||
+        object.type === 'path' ||
+        object.type === 'region' ||
+        object.type === 'terrain-stroke',
     );
     this.objects = new Map(projected.map((object) => [object.id, object]));
     const sortTargets = new Set<Container>();
@@ -72,7 +76,12 @@ export class ObjectProjection {
 
   /** Applies one committed object patch without rebuilding the full scene. */
   upsert(object: MapObject): void {
-    if (!isStampMapObject(object) && object.type !== 'path' && object.type !== 'region') {
+    if (
+      !isStampMapObject(object) &&
+      object.type !== 'path' &&
+      object.type !== 'region' &&
+      object.type !== 'terrain-stroke'
+    ) {
       this.removeObject(object.id);
       return;
     }
@@ -212,6 +221,8 @@ export class ObjectProjection {
     if (!this.theme || !(view.display instanceof Graphics)) return;
     if (view.object.type === 'path') drawPath(view.display, view.object, this.theme);
     else if (view.object.type === 'region') drawRegion(view.display, view.object, this.theme);
+    else if (view.object.type === 'terrain-stroke')
+      drawTerrainStroke(view.display, view.object, this.theme);
   }
 
   private isInVisibleRect(object: MapObject): boolean {

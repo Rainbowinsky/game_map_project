@@ -43,6 +43,9 @@ const OBJECT_CHANGE_KEYS = [
   'flipX',
   'flipY',
   'randomSeed',
+  'terrainKind',
+  'brush',
+  'points',
   'pathKind',
   'nodes',
   'styleToken',
@@ -240,6 +243,11 @@ export class CreatePathCommand extends CreateObjectCommand {
 export class CreateRegionCommand extends CreateObjectCommand {
   override readonly id = 'region.create';
   override readonly label = 'Create region';
+}
+
+export class DrawTerrainStrokeCommand extends CreateObjectCommand {
+  override readonly id = 'terrain-stroke.draw';
+  override readonly label = 'Draw terrain stroke';
 }
 
 export class UpdateObjectCommand extends SnapshotCommand {

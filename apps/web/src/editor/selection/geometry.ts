@@ -54,7 +54,7 @@ function pathHitSegments(object: Extract<MapObject, { type: 'path' }>): [WorldPo
 export type TransformMode = 'move' | 'scale' | 'rotate';
 
 export function objectBounds(object: MapObject): WorldRect {
-  if (object.type === 'path' || object.type === 'region') {
+  if (object.type === 'path' || object.type === 'region' || object.type === 'terrain-stroke') {
     const points =
       object.type === 'path'
         ? object.nodes.flatMap((node) => [
@@ -66,7 +66,9 @@ export function objectBounds(object: MapObject): WorldRect {
               ? [{ x: node.anchor.x + node.handleOut.x, y: node.anchor.y + node.handleOut.y }]
               : []),
           ])
-        : object.vertices;
+        : object.type === 'region'
+          ? object.vertices
+          : object.points;
     const left = Math.min(...points.map((point) => point.x));
     const top = Math.min(...points.map((point) => point.y));
     const right = Math.max(...points.map((point) => point.x));
@@ -74,7 +76,9 @@ export function objectBounds(object: MapObject): WorldRect {
     const padding =
       object.type === 'path'
         ? Math.max(object.widthStart, object.widthEnd) / 2
-        : object.strokeWidth;
+        : object.type === 'region'
+          ? object.strokeWidth
+          : object.brush.radius;
     return {
       x: left - padding,
       y: top - padding,
@@ -154,6 +158,25 @@ export function pointInObject(point: WorldPoint, object: MapObject): boolean {
               Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared),
             );
       return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy)) <= tolerance;
+    });
+  }
+  if (object.type === 'terrain-stroke') {
+    return object.points.slice(1).some((end, index) => {
+      const start = object.points[index]!;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const squared = dx * dx + dy * dy;
+      const ratio =
+        squared === 0
+          ? 0
+          : Math.max(
+              0,
+              Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / squared),
+            );
+      return (
+        Math.hypot(point.x - (start.x + ratio * dx), point.y - (start.y + ratio * dy)) <=
+        object.brush.radius
+      );
     });
   }
   const dx = point.x - object.x;

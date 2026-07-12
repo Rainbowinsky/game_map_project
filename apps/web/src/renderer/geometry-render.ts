@@ -3,6 +3,7 @@ import type {
   MapObject,
   PathMapObject,
   RegionMapObject,
+  TerrainStrokeMapObject,
   ThemeTokens,
   WorldPoint,
 } from '@fantasy-map/map-model';
@@ -60,14 +61,63 @@ export function drawRegion(graphics: Graphics, object: RegionMapObject, tokens: 
   });
 }
 
+function terrainColor(object: TerrainStrokeMapObject, tokens: ThemeTokens): number {
+  const value =
+    object.terrainKind === 'water'
+      ? tokens.river
+      : object.terrainKind === 'forest'
+        ? tokens.regionStroke
+        : object.terrainKind === 'mountain'
+          ? tokens.coast
+          : object.terrainKind === 'desert'
+            ? tokens.regionFill
+            : tokens.land;
+  return colorToNumber(value);
+}
+
+/** Soft edge plus a hardness-controlled core; persisted data remains a semantic centerline. */
+export function drawTerrainStroke(
+  graphics: Graphics,
+  object: TerrainStrokeMapObject,
+  tokens: ThemeTokens,
+): void {
+  graphics.clear();
+  const first = object.points[0];
+  if (!first) return;
+  const trace = () => {
+    graphics.moveTo(first.x, first.y);
+    for (const point of object.points.slice(1)) graphics.lineTo(point.x, point.y);
+  };
+  const color = terrainColor(object, tokens);
+  trace();
+  graphics.stroke({
+    color,
+    width: object.brush.radius * 2,
+    alpha:
+      object.opacity * object.brush.opacity * Math.max(0.12, 0.34 - object.brush.hardness * 0.18),
+    cap: 'round',
+    join: 'round',
+  });
+  trace();
+  graphics.stroke({
+    color,
+    width: Math.max(0.5, object.brush.radius * 2 * (0.35 + object.brush.hardness * 0.65)),
+    alpha: object.opacity * object.brush.opacity * (0.42 + object.brush.hardness * 0.48),
+    cap: 'round',
+    join: 'round',
+  });
+}
+
 export function createGeometryGraphics(object: MapObject, tokens: ThemeTokens): Graphics | null {
-  if (object.type !== 'path' && object.type !== 'region') return null;
+  if (object.type !== 'path' && object.type !== 'region' && object.type !== 'terrain-stroke')
+    return null;
   const graphics = new Graphics();
   graphics.eventMode = 'none';
   graphics.label = `object:${object.id}`;
   graphics.zIndex = object.zIndex;
   graphics.visible = object.visible;
   if (object.type === 'path') drawPath(graphics, object, tokens);
-  else drawRegion(graphics, object, tokens);
+  else if (object.type === 'region') drawRegion(graphics, object, tokens);
+  else drawTerrainStroke(graphics, object, tokens);
   return graphics;
 }

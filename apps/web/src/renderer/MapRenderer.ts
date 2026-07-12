@@ -27,7 +27,7 @@ import {
 } from '../exports/png-exporter.js';
 import { colorToNumber, drawMapArtwork } from './map-artwork.js';
 import { ObjectProjection } from './ObjectProjection.js';
-import { drawPath, drawRegion } from './geometry-render.js';
+import { drawPath, drawRegion, drawTerrainStroke } from './geometry-render.js';
 import { RendererProjection } from './RendererProjection.js';
 import { themeRegistry } from '../themes/ThemeRegistry.js';
 
@@ -211,6 +211,34 @@ export class MapRenderer {
       drawPath(this.geometryPreview, { ...object, opacity: 0.72 }, this.themeTokens);
     else if (object.type === 'region')
       drawRegion(this.geometryPreview, { ...object, opacity: 0.72 }, this.themeTokens);
+    else if (object.type === 'terrain-stroke')
+      drawTerrainStroke(this.geometryPreview, { ...object, opacity: 0.72 }, this.themeTokens);
+  }
+
+  previewTerrainEraser(points: readonly WorldPoint[], radius: number): void {
+    this.geometryPreview.clear();
+    const first = points[0];
+    if (!first) return;
+    if (points.length === 1) {
+      this.geometryPreview
+        .circle(first.x, first.y, radius)
+        .fill({ color: colorToNumber(this.themeTokens.selection), alpha: 0.18 })
+        .stroke({
+          color: colorToNumber(this.themeTokens.selection),
+          alpha: 0.8,
+          width: 1 / this.camera.zoom,
+        });
+      return;
+    }
+    this.geometryPreview.moveTo(first.x, first.y);
+    for (const point of points.slice(1)) this.geometryPreview.lineTo(point.x, point.y);
+    this.geometryPreview.stroke({
+      color: colorToNumber(this.themeTokens.selection),
+      width: radius * 2,
+      alpha: 0.28,
+      cap: 'round',
+      join: 'round',
+    });
   }
 
   hitSelectedGeometryNode(point: WorldPoint): { objectId: string; index: number } | null {
@@ -253,6 +281,8 @@ export class MapRenderer {
   }
 
   hitSelectionHandle(point: WorldPoint): TransformMode | null {
+    if (this.selectedIds.some((id) => this.mapObjects.get(id)?.type === 'terrain-stroke'))
+      return null;
     const bounds = this.currentSelectionBounds();
     if (!bounds) return null;
     const tolerance = 12 / this.camera.zoom;
