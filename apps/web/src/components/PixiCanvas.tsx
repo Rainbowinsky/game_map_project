@@ -38,8 +38,10 @@ import {
 } from '../editor/geometry/freehand-geometry.js';
 import {
   appendResampledSegment,
+  fitTerrainStrokePayload,
   finishResampledStroke,
   strokeIntersectsEraser,
+  terrainStrokePayloadFits,
 } from '../editor/terrain/terrain-stroke.js';
 import {
   rectFromPoints,
@@ -112,7 +114,10 @@ interface TerrainGesture {
   readonly mode: 'draw' | 'erase';
   readonly terrainKind: TerrainKind;
   readonly brush: TerrainBrush;
+  layerId: string;
   points: TerrainStrokePoint[];
+  nextBudgetCheck: number;
+  createdObjectIds: string[];
 }
 
 function localPoint(
@@ -239,8 +244,15 @@ function createTerrainObject(
   terrainKind: TerrainKind,
   brush: TerrainBrush,
   inputPoints: readonly TerrainStrokePoint[],
+  requestedLayerId?: string,
 ): Extract<MapObject, { type: 'terrain-stroke' }> {
-  const layerId = editableTerrainLayerId();
+  const map = useMapStore.getState();
+  const requestedLayer = requestedLayerId ? map.layersById[requestedLayerId] : undefined;
+  const layerId =
+    requestedLayer?.type === 'raster' &&
+    isLayerEffectivelyEditable(requestedLayer.id, map.layersById)
+      ? requestedLayer.id
+      : editableTerrainLayerId();
   if (!layerId) throw new Error('请先创建或解锁一个可编辑的地形图层。');
   const points = inputPoints.map((point) => ({ ...point, ...clampToMap(document, point) }));
   const center = {
@@ -251,7 +263,7 @@ function createTerrainObject(
   const zIndex =
     Math.max(
       -1,
-      ...Object.values(useMapStore.getState().objectsById)
+      ...Object.values(map.objectsById)
         .filter((object) => object.layerId === layerId)
         .map((object) => object.zIndex),
     ) + 1;
@@ -549,11 +561,37 @@ export function PixiCanvas({
             terrainGesture.terrainKind,
             terrainGesture.brush,
             terrainGesture.points,
+            terrainGesture.layerId,
           ),
         );
       } catch {
         // Keep interaction responsive; commit reports schema and budget failures.
       }
+    };
+    const commitTerrainSegment = (
+      target: TerrainGesture,
+      sourcePoints: readonly TerrainStrokePoint[],
+    ): string => {
+      const points = fitTerrainStrokePayload(
+        sourcePoints,
+        target.brush,
+        0.5 / controller.getSnapshot().camera.zoom,
+      );
+      const object = createTerrainObject(
+        initialDocument,
+        target.terrainKind,
+        target.brush,
+        points,
+        target.layerId,
+      );
+      // createTerrainObject falls back to another editable raster layer if the
+      // original one was removed while a very long pointer gesture was active.
+      target.layerId = object.layerId;
+      if (!commandManager.execute(new DrawTerrainStrokeCommand(object))) {
+        throw new Error('地形笔迹未能写入画板，请重试。');
+      }
+      target.createdObjectIds.push(object.id);
+      return object.id;
     };
     const addTerrainSample = (event: PointerEvent) => {
       if (!terrainGesture) return;
@@ -568,6 +606,23 @@ export function PixiCanvas({
         { ...point, pressure },
         spacing,
       );
+      if (
+        terrainGesture.mode === 'draw' &&
+        terrainGesture.points.length >= terrainGesture.nextBudgetCheck
+      ) {
+        if (terrainStrokePayloadFits(terrainGesture.points, terrainGesture.brush)) {
+          terrainGesture.nextBudgetCheck += 256;
+        } else {
+          const endpoint = terrainGesture.points.at(-1)!;
+          commitTerrainSegment(terrainGesture, terrainGesture.points);
+          // Retain the shared endpoint so separately persisted segments render
+          // as one continuous stroke without a visible gap.
+          terrainGesture.points = [endpoint];
+          terrainGesture.nextBudgetCheck = 256;
+          renderer.previewGeometry(null);
+          onInteractionError?.(null);
+        }
+      }
     };
     const commitTerrainGesture = (event: PointerEvent) => {
       if (!terrainGesture) return;
@@ -580,6 +635,15 @@ export function PixiCanvas({
           controller.screenToWorld(localPoint(event, host)),
         );
         let points = finishResampledStroke(finished.points, endpoint);
+        if (
+          finished.mode === 'draw' &&
+          finished.createdObjectIds.length > 0 &&
+          points.length === 1
+        ) {
+          useEditorStore.getState().setSelection(finished.createdObjectIds);
+          onInteractionError?.(null);
+          return;
+        }
         if (points.length === 1) {
           const pixel = 1 / controller.getSnapshot().camera.zoom;
           const direction = endpoint.x + pixel <= initialDocument.width ? pixel : -pixel;
@@ -589,15 +653,8 @@ export function PixiCanvas({
           );
         }
         if (finished.mode === 'draw') {
-          const object = createTerrainObject(
-            initialDocument,
-            finished.terrainKind,
-            finished.brush,
-            points,
-          );
-          if (commandManager.execute(new DrawTerrainStrokeCommand(object))) {
-            useEditorStore.getState().setSelection([object.id]);
-          }
+          commitTerrainSegment(finished, points);
+          useEditorStore.getState().setSelection(finished.createdObjectIds);
         } else {
           const map = useMapStore.getState();
           const hits = Object.values(map.objectsById).filter(
@@ -651,7 +708,8 @@ export function PixiCanvas({
       }
       if (toolRef.current === 'terrain-brush' || toolRef.current === 'terrain-eraser') {
         event.preventDefault();
-        if (!editableTerrainLayerId()) {
+        const terrainLayerId = editableTerrainLayerId();
+        if (!terrainLayerId) {
           reportError(new Error('请先创建或解锁一个可编辑的地形图层。'));
           return;
         }
@@ -661,6 +719,7 @@ export function PixiCanvas({
           mode: toolRef.current === 'terrain-brush' ? 'draw' : 'erase',
           terrainKind: settings.terrainKind,
           brush: { ...settings.terrainBrush },
+          layerId: terrainLayerId,
           points: [
             {
               ...point,
@@ -668,6 +727,8 @@ export function PixiCanvas({
                 event.pointerType === 'mouse' || event.pressure === 0 ? 0.5 : event.pressure,
             },
           ],
+          nextBudgetCheck: 256,
+          createdObjectIds: [],
         };
         capture(event);
         previewTerrainGesture();

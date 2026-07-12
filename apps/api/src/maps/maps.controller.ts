@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { MAP_MODEL_SCHEMA_VERSION, type ApplyOperationsRequest } from '@fantasy-map/map-model';
+import { Throttle } from '@nestjs/throttler';
 import {
   createMapRequestSchema,
   createProjectRequestSchema,
@@ -47,6 +48,8 @@ import {
 interface Actor {
   id: string;
 }
+
+export const MAP_CHUNK_READ_THROTTLE = { limit: 2_000, ttl: 60_000 } as const;
 
 @Controller()
 export class MapsController {
@@ -112,6 +115,7 @@ export class MapsController {
   }
 
   @Get('maps/:mapId/chunks')
+  @Throttle({ default: MAP_CHUNK_READ_THROTTLE })
   listChunks(
     @CurrentUser() actor: Actor,
     @Param(new ZodValidationPipe(mapIdParamSchema)) params: { mapId: string },
@@ -121,6 +125,7 @@ export class MapsController {
   }
 
   @Get('maps/:mapId/chunks/:x/:y')
+  @Throttle({ default: MAP_CHUNK_READ_THROTTLE })
   getChunk(
     @CurrentUser() actor: Actor,
     @Param(new ZodValidationPipe(chunkParamSchema)) params: { mapId: string; x: number; y: number },

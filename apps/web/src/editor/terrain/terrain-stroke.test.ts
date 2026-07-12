@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { TerrainStrokeMapObject } from '@fantasy-map/map-model';
+import {
+  hasByteLimit,
+  MAX_OBJECT_PAYLOAD_BYTES,
+  type TerrainStrokeMapObject,
+} from '@fantasy-map/map-model';
 
 import {
   appendResampledSegment,
+  fitTerrainStrokePayload,
   finishResampledStroke,
   strokeIntersectsEraser,
+  terrainStrokePayloadFits,
 } from './terrain-stroke.js';
 
 describe('terrain stroke sampling', () => {
@@ -29,6 +35,22 @@ describe('terrain stroke sampling', () => {
     expect(() => appendResampledSegment([{ x: 0, y: 0 }], { x: 5, y: 0 }, 1, 3)).toThrow(
       /cannot exceed 3/,
     );
+  });
+
+  it('adaptively simplifies a long stroke into the persistence byte budget', () => {
+    const brush = { radius: 12, opacity: 0.8, spacing: 1, hardness: 0.5 };
+    const points = Array.from({ length: 12_000 }, (_, index) => ({
+      x: index / 4,
+      y: 100 + Math.sin(index / 200) * 0.1,
+      pressure: 0.5,
+    }));
+    expect(hasByteLimit({ brush, points }, MAX_OBJECT_PAYLOAD_BYTES)).toBe(false);
+    const fitted = fitTerrainStrokePayload(points, brush, 0.5);
+    expect(fitted.length).toBeLessThan(points.length);
+    expect(fitted[0]).toEqual(points[0]);
+    expect(fitted.at(-1)).toEqual(points.at(-1));
+    expect(hasByteLimit({ brush, points: fitted }, MAX_OBJECT_PAYLOAD_BYTES)).toBe(true);
+    expect(terrainStrokePayloadFits(fitted, brush)).toBe(true);
   });
 });
 
