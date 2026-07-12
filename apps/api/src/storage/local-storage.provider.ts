@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 import { AppError } from '../common/errors/app-error.js';
@@ -62,6 +62,14 @@ export class LocalStorageProvider implements StorageProvider {
 
   async read(key: string): Promise<Uint8Array> {
     return Uint8Array.from(await readFile(resolveStoragePath(this.root, key)));
+  }
+
+  async move(sourceKey: string, destinationKey: string): Promise<StorageDescriptor> {
+    const sourcePath = resolveStoragePath(this.root, sourceKey);
+    const destinationPath = resolveStoragePath(this.root, destinationKey);
+    await mkdir(dirname(destinationPath), { recursive: true });
+    await rename(sourcePath, destinationPath);
+    return this.getPublicDescriptor(destinationKey);
   }
 
   async delete(key: string): Promise<void> {

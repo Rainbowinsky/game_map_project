@@ -187,6 +187,9 @@ async function prepare(page: Page) {
       };
     else if (method === 'POST' && path.includes(`/projects/${ids.project}/maps`))
       data = mapDocument(ids.map2, '群星内海');
+    else if (method === 'GET' && path.endsWith('/asset-categories')) data = { items: [] };
+    else if (method === 'GET' && path.endsWith('/assets')) data = { items: [], nextCursor: null };
+    else if (method === 'GET' && path.match(/\/maps\/[^/]+\/locations$/)) data = { items: [] };
     else if (method === 'GET' && path.match(/\/maps\/[^/]+$/))
       data = mapDocument(
         path.endsWith(ids.map2) ? ids.map2 : ids.map,
@@ -246,7 +249,7 @@ test('opens a recent map and restores the editor route after refresh', async ({ 
   await expect(page.getByRole('heading', { name: '地图室' })).toBeVisible();
   await page.getByRole('link', { name: /灰烬海岸/ }).click();
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();
-  await expect(page.getByText('图章素材', { exact: true })).toBeVisible();
+  await expect(page.getByText('素材库', { exact: true })).toBeVisible();
   await expect(page.getByTestId('pixi-host').locator('canvas')).toHaveCount(1);
   const canvas = page.getByTestId('pixi-host');
   const bounds = await canvas.boundingBox();

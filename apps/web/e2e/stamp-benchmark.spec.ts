@@ -82,6 +82,12 @@ async function prepareBenchmark(page: Page, count: number): Promise<void> {
     let data: unknown = {};
     if (route.request().method() === 'GET' && path.endsWith(`/maps/${ids.map}`)) {
       data = document();
+    } else if (route.request().method() === 'GET' && path.endsWith('/locations')) {
+      data = { items: [] };
+    } else if (route.request().method() === 'GET' && path.endsWith('/asset-categories')) {
+      data = { items: [] };
+    } else if (route.request().method() === 'GET' && path.endsWith('/assets')) {
+      data = { items: [], nextCursor: null };
     } else if (route.request().method() === 'GET' && path.endsWith('/chunks')) {
       data = {
         items: [

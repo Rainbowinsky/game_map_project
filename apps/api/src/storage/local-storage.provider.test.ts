@@ -60,4 +60,16 @@ describe('LocalStorageProvider', () => {
 
     expect(JSON.stringify(descriptor)).not.toContain(root);
   });
+
+  it('moves content between validated keys', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fantasy-map-storage-'));
+    const provider = new LocalStorageProvider(root);
+    await provider.put('temporary/upload.bin', Uint8Array.from([1, 2, 3]));
+
+    const descriptor = await provider.move('temporary/upload.bin', 'assets/user/asset.bin');
+
+    expect(descriptor.url).toBe('/storage/assets/user/asset.bin');
+    expect(await provider.exists('temporary/upload.bin')).toBe(false);
+    expect(await provider.read('assets/user/asset.bin')).toEqual(Uint8Array.from([1, 2, 3]));
+  });
 });

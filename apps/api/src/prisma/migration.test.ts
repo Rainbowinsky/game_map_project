@@ -50,4 +50,17 @@ describe('Prisma migrations', () => {
     expect(preflight).toContain('`iconAssetId` = NULL');
     expect(preflight).not.toContain('DELETE');
   });
+
+  it('enforces P2-5 owner-scoped asset category names', async () => {
+    const migration = await readFile(
+      resolve(
+        process.cwd(),
+        'prisma/migrations/20260712160000_p25_asset_category_unique/migration.sql',
+      ),
+      'utf8',
+    );
+    expect(migration).not.toContain('DROP INDEX');
+    expect(migration).toContain('AssetCategory_ownerId_name_key');
+    expect(migration).toContain('(`ownerId`, `name`)');
+  });
 });

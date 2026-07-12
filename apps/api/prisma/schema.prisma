@@ -195,6 +195,7 @@ model AssetCategory {
   assets Asset[]
 
   @@index([ownerId, name])
+  @@unique([ownerId, name])
 }
 
 model Asset {

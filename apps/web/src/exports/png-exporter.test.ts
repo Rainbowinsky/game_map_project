@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { createStampMapObjectFixture } from '@fantasy-map/map-model/fixtures';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createMarkerMapObjectFixture,
+  createStampMapObjectFixture,
+} from '@fantasy-map/map-model/fixtures';
 import type { Texture } from 'pixi.js';
 
 import { STAMP_ASSETS } from '../assets/stamp-assets.js';
@@ -31,5 +34,17 @@ describe('loadExportTextures', () => {
 
     expect(loaded.get(assetId)).toBe(texture);
     expect(loaded.size).toBe(1);
+  });
+
+  it('loads authenticated custom marker icons by asset ID', async () => {
+    const assetId = '10000000-0000-4000-8000-000000000099';
+    const marker = { ...createMarkerMapObjectFixture(), iconAssetId: assetId };
+    const texture = {} as Texture;
+    const loadCustomTexture = vi.fn(async () => texture);
+
+    const loaded = await loadExportTextures([marker], async () => texture, loadCustomTexture);
+
+    expect(loadCustomTexture).toHaveBeenCalledWith(assetId);
+    expect(loaded.get(assetId)).toBe(texture);
   });
 });

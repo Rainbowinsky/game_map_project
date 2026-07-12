@@ -11,7 +11,7 @@ import { LoadingState } from '../components/LoadingState.js';
 import { LayerPanel } from '../components/LayerPanel.js';
 import { ObjectInspector } from '../components/ObjectInspector.js';
 import { LocationPanel } from '../components/LocationPanel.js';
-import { StampAssetPanel } from '../components/StampAssetPanel.js';
+import { AssetLibraryPanel } from '../components/AssetLibraryPanel.js';
 import { ToolSettingsPanel, type ToolPanelPosition } from '../components/ToolSettingsPanel.js';
 import {
   PixiCanvas,
@@ -201,7 +201,11 @@ export function EditorPage() {
         if (moveSelectionInStack(commandManager, 'forward')) event.preventDefault();
       } else if (event.key === '[') {
         if (moveSelectionInStack(commandManager, 'backward')) event.preventDefault();
-      } else if (!modifier && !event.altKey && ['v', 'h', 's', 'r', 'w', 'p', 't', 'l', 'b', 'e'].includes(key)) {
+      } else if (
+        !modifier &&
+        !event.altKey &&
+        ['v', 'h', 's', 'r', 'w', 'p', 't', 'l', 'b', 'e'].includes(key)
+      ) {
         const shortcuts: Record<string, EditorTool> = {
           v: 'select',
           h: 'pan',
@@ -300,7 +304,7 @@ export function EditorPage() {
         className={`editor-assets panel-slide ${leftPanelOpen ? 'is-open' : ''}`}
         aria-hidden={!leftPanelOpen}
       >
-        <StampAssetPanel onClose={toggleLeftPanel} />
+        <AssetLibraryPanel onClose={toggleLeftPanel} />
       </aside>
       {!leftPanelOpen && (
         <button
@@ -512,22 +516,96 @@ export function EditorPage() {
             <small>单击开始，移动鼠标按真实轨迹绘制，再次单击完成；Esc 取消。</small>
           </ToolSettingsPanel>
         )}
-        {(tool === 'text' || tool === 'location') && <ToolSettingsPanel
-          containerRef={stageRef} title={tool === 'text' ? '文字设置' : '地点资料'}
-          open={toolControlsOpen} position={toolPanelPosition} onOpenChange={setToolControlsOpen} onPositionChange={setToolPanelPosition}>
-          {tool === 'text' ? <>
-            <label><span>文字</span><textarea value={textDraft.text} onChange={(event) => setTextDraft({ text: event.target.value })} /></label>
-            <label><span>字号 <b>{textDraft.fontSize}</b></span><input type="range" min="4" max="160" value={textDraft.fontSize} onChange={(event) => setTextDraft({ fontSize: Number(event.target.value) })} /></label>
-            <label><span>对齐</span><select value={textDraft.align} onChange={(event) => setTextDraft({ align: event.target.value as typeof textDraft.align })}><option value="left">左</option><option value="center">中</option><option value="right">右</option></select></label>
-          </> : <>
-            <label><span>名称</span><input value={locationDraft.name} onChange={(event) => setLocationDraft({ name: event.target.value })} /></label>
-            <label><span>类型</span><input value={locationDraft.type} onChange={(event) => setLocationDraft({ type: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })} /></label>
-            <label><span>摘要</span><textarea value={locationDraft.summary} onChange={(event) => setLocationDraft({ summary: event.target.value })} /></label>
-            <label><span>详情（纯文本）</span><textarea value={locationDraft.description} onChange={(event) => setLocationDraft({ description: event.target.value })} /></label>
-            <label><span>标签（逗号分隔）</span><input value={locationDraft.tags} onChange={(event) => setLocationDraft({ tags: event.target.value })} /></label>
-          </>}
-          <small>设置内容后，在画布上单击放置。</small>
-        </ToolSettingsPanel>}
+        {(tool === 'text' || tool === 'location') && (
+          <ToolSettingsPanel
+            containerRef={stageRef}
+            title={tool === 'text' ? '文字设置' : '地点资料'}
+            open={toolControlsOpen}
+            position={toolPanelPosition}
+            onOpenChange={setToolControlsOpen}
+            onPositionChange={setToolPanelPosition}
+          >
+            {tool === 'text' ? (
+              <>
+                <label>
+                  <span>文字</span>
+                  <textarea
+                    value={textDraft.text}
+                    onChange={(event) => setTextDraft({ text: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>
+                    字号 <b>{textDraft.fontSize}</b>
+                  </span>
+                  <input
+                    type="range"
+                    min="4"
+                    max="160"
+                    value={textDraft.fontSize}
+                    onChange={(event) => setTextDraft({ fontSize: Number(event.target.value) })}
+                  />
+                </label>
+                <label>
+                  <span>对齐</span>
+                  <select
+                    value={textDraft.align}
+                    onChange={(event) =>
+                      setTextDraft({ align: event.target.value as typeof textDraft.align })
+                    }
+                  >
+                    <option value="left">左</option>
+                    <option value="center">中</option>
+                    <option value="right">右</option>
+                  </select>
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  <span>名称</span>
+                  <input
+                    value={locationDraft.name}
+                    onChange={(event) => setLocationDraft({ name: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>类型</span>
+                  <input
+                    value={locationDraft.type}
+                    onChange={(event) =>
+                      setLocationDraft({
+                        type: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>摘要</span>
+                  <textarea
+                    value={locationDraft.summary}
+                    onChange={(event) => setLocationDraft({ summary: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>详情（纯文本）</span>
+                  <textarea
+                    value={locationDraft.description}
+                    onChange={(event) => setLocationDraft({ description: event.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>标签（逗号分隔）</span>
+                  <input
+                    value={locationDraft.tags}
+                    onChange={(event) => setLocationDraft({ tags: event.target.value })}
+                  />
+                </label>
+              </>
+            )}
+            <small>设置内容后，在画布上单击放置。</small>
+          </ToolSettingsPanel>
+        )}
         {interactionError && (
           <div className="stage-error" role="alert">
             {interactionError}
@@ -584,7 +662,12 @@ export function EditorPage() {
           >
             图层
           </button>
-          <button className={rightTab === 'locations' ? 'active' : ''} onClick={() => setRightTab('locations')}>地点</button>
+          <button
+            className={rightTab === 'locations' ? 'active' : ''}
+            onClick={() => setRightTab('locations')}
+          >
+            地点
+          </button>
           <button
             className={rightTab === 'properties' ? 'active' : ''}
             onClick={() => setRightTab('properties')}
@@ -600,7 +683,12 @@ export function EditorPage() {
             <LayerPanel commandManager={commandManager} />
           ) : rightTab === 'properties' ? (
             <ObjectInspector commandManager={commandManager} />
-          ) : <LocationPanel commandManager={commandManager} onLocate={(point) => canvasHandle.current?.focusAt(point)} />}
+          ) : (
+            <LocationPanel
+              commandManager={commandManager}
+              onLocate={(point) => canvasHandle.current?.focusAt(point)}
+            />
+          )}
         </div>
         <div className="inspector-footer">
           <button>

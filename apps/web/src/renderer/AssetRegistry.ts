@@ -1,9 +1,10 @@
 import { Assets, type Texture } from 'pixi.js';
 
-import { STAMP_ASSETS, type StampAssetDefinition } from '../assets/stamp-assets.js';
+import { STAMP_ASSETS } from '../assets/stamp-assets.js';
+import { fetchAssetBlob } from '../services/api-client.js';
+import { useSessionStore } from '../stores/session-store.js';
 
 interface AssetEntry {
-  readonly definition: StampAssetDefinition;
   readonly texture: Promise<Texture>;
   references: number;
 }
@@ -13,7 +14,7 @@ export interface TextureLease {
   release(): void;
 }
 
-/** Owns one shared texture promise per built-in asset for the renderer lifetime. */
+/** Owns one shared texture promise per built-in or authenticated custom asset. */
 export class AssetRegistry {
   private readonly entries = new Map<string, AssetEntry>();
   private destroyed = false;
@@ -25,11 +26,9 @@ export class AssetRegistry {
 
   acquire(assetId: string): TextureLease {
     if (this.destroyed) throw new Error('AssetRegistry has been destroyed.');
-    const definition = STAMP_ASSETS.find((asset) => asset.id === assetId);
-    if (!definition) throw new Error(`Unknown stamp asset ${assetId}.`);
     let entry = this.entries.get(assetId);
     if (!entry) {
-      entry = { definition, texture: this.loadTexture(definition.url), references: 0 };
+      entry = { texture: this.loadAsset(assetId), references: 0 };
       this.entries.set(assetId, entry);
     }
     entry.references += 1;
@@ -42,6 +41,21 @@ export class AssetRegistry {
         entry.references = Math.max(0, entry.references - 1);
       },
     };
+  }
+
+  private async loadAsset(assetId: string): Promise<Texture> {
+    const definition = STAMP_ASSETS.find((asset) => asset.id === assetId);
+    if (definition) return this.loadTexture(definition.url);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId))
+      throw new Error(`Unknown asset ${assetId}.`);
+    const accessToken = useSessionStore.getState().session?.accessToken;
+    if (!accessToken) throw new Error('An authenticated session is required to load this asset.');
+    const objectUrl = URL.createObjectURL(await fetchAssetBlob(accessToken, assetId));
+    try {
+      return await this.loadTexture(objectUrl);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   }
 
   getReferenceCount(assetId: string): number {

@@ -3,7 +3,6 @@ import {
   isStampMapObject,
   type MapObject,
   type ObjectTransform,
-  type StampMapObject,
   type ThemeTokens,
   type WorldRect,
 } from '@fantasy-map/map-model';
@@ -23,13 +22,22 @@ interface ObjectView {
 function applyTransform(
   sprite: Container,
   object: MapObject | ObjectTransform,
-  source?: StampMapObject,
+  source?: MapObject,
 ): void {
   sprite.position.set(object.x, object.y);
   sprite.rotation = object.rotation;
-  const flipX = source?.flipX ?? ('flipX' in object && object.flipX);
-  const flipY = source?.flipY ?? ('flipY' in object && object.flipY);
-  sprite.scale.set(object.scaleX * (flipX ? -1 : 1), object.scaleY * (flipY ? -1 : 1));
+  const flipX =
+    (source && 'flipX' in source ? source.flipX : undefined) ?? ('flipX' in object && object.flipX);
+  const flipY =
+    (source && 'flipY' in source ? source.flipY : undefined) ?? ('flipY' in object && object.flipY);
+  const markerScale =
+    source?.type === 'marker' && sprite instanceof Sprite && sprite.texture.width > 0
+      ? 32 / Math.max(sprite.texture.width, sprite.texture.height)
+      : 1;
+  sprite.scale.set(
+    object.scaleX * markerScale * (flipX ? -1 : 1),
+    object.scaleY * markerScale * (flipY ? -1 : 1),
+  );
 }
 
 /** Incrementally projects normalized stamp objects into their layer containers. */
@@ -67,9 +75,9 @@ export class ObjectProjection {
         isStampMapObject(object) ||
         object.type === 'path' ||
         object.type === 'region' ||
-      object.type === 'terrain-stroke' ||
-      object.type === 'text' ||
-      object.type === 'marker',
+        object.type === 'terrain-stroke' ||
+        object.type === 'text' ||
+        object.type === 'marker',
     );
     this.objects = new Map(projected.map((object) => [object.id, object]));
     const sortTargets = new Set<Container>();
@@ -97,12 +105,14 @@ export class ObjectProjection {
       const view = this.views.get(objectId);
       const object = this.objects.get(objectId);
       if (!view || !object) continue;
-      if (
-        !((isStampMapObject(object) && view.display instanceof Sprite) ||
-          (object.type === 'text' && view.display instanceof Text) ||
-          (object.type === 'marker' && view.display instanceof Graphics))
-      ) continue;
-      applyTransform(view.display, transform, isStampMapObject(object) ? object : undefined);
+      if (!(
+        (isStampMapObject(object) && view.display instanceof Sprite) ||
+        (object.type === 'text' && view.display instanceof Text) ||
+        (object.type === 'marker' &&
+          (view.display instanceof Graphics || view.display instanceof Sprite))
+      ))
+        continue;
+      applyTransform(view.display, transform, object);
       previewed.push({ ...object, ...transform });
     }
     return previewed;
@@ -113,8 +123,10 @@ export class ObjectProjection {
       if (
         (isStampMapObject(view.object) && view.display instanceof Sprite) ||
         (view.object.type === 'text' && view.display instanceof Text) ||
-        (view.object.type === 'marker' && view.display instanceof Graphics)
-      ) applyTransform(view.display, view.object, isStampMapObject(view.object) ? view.object : undefined);
+        (view.object.type === 'marker' &&
+          (view.display instanceof Graphics || view.display instanceof Sprite))
+      )
+        applyTransform(view.display, view.object, view.object);
     }
   }
 
@@ -132,7 +144,8 @@ export class ObjectProjection {
   setVisibleRect(rect: WorldRect): void {
     this.visibleRect = rect;
     for (const view of this.views.values()) {
-      const visible = view.object.visible && this.isInVisibleRect(view.object) && this.isInZoomRange(view.object);
+      const visible =
+        view.object.visible && this.isInVisibleRect(view.object) && this.isInZoomRange(view.object);
       if (view.display.visible !== visible) view.display.visible = visible;
     }
   }
@@ -140,7 +153,8 @@ export class ObjectProjection {
   setZoom(zoom: number): void {
     this.zoom = zoom;
     for (const view of this.views.values())
-      view.display.visible = view.object.visible && this.isInVisibleRect(view.object) && this.isInZoomRange(view.object);
+      view.display.visible =
+        view.object.visible && this.isInVisibleRect(view.object) && this.isInZoomRange(view.object);
   }
 
   getVisibleObjectCount(): number {
@@ -159,11 +173,31 @@ export class ObjectProjection {
 
   private create(object: MapObject): ObjectView {
     if (object.type === 'text') {
-      const display = new Text({ text: object.text, anchor: { x: object.align === 'left' ? 0 : object.align === 'right' ? 1 : 0.5, y: 0.5 } });
+      const display = new Text({
+        text: object.text,
+        anchor: { x: object.align === 'left' ? 0 : object.align === 'right' ? 1 : 0.5, y: 0.5 },
+      });
       display.eventMode = 'none';
       display.label = `object:${object.id}`;
       const view: ObjectView = { display, object, disposed: false };
       this.redraw(view);
+      return view;
+    }
+    if (object.type === 'marker' && object.iconAssetId) {
+      const lease = this.assets.acquire(object.iconAssetId);
+      const sprite = new Sprite(Texture.EMPTY);
+      sprite.anchor.set(0.5);
+      sprite.eventMode = 'none';
+      sprite.label = `object:${object.id}`;
+      const view: ObjectView = { display: sprite, lease, object, disposed: false };
+      void lease.texture
+        .then((texture) => {
+          if (!view.disposed) {
+            sprite.texture = texture;
+            applyTransform(sprite, view.object, view.object);
+          }
+        })
+        .catch(() => undefined);
       return view;
     }
     if (!isStampMapObject(object)) {
@@ -200,7 +234,11 @@ export class ObjectProjection {
       view && isStampMapObject(view.object) && isStampMapObject(object)
         ? view.object.assetId !== object.assetId
         : false;
-    if (!view || kindChanged || assetChanged) {
+    const markerAssetChanged =
+      view && view.object.type === 'marker' && object.type === 'marker'
+        ? view.object.iconAssetId !== object.iconAssetId
+        : false;
+    if (!view || kindChanged || assetChanged || markerAssetChanged) {
       if (view) this.remove(object.id, view);
       view = this.create(object);
       this.views.set(object.id, view);
@@ -218,17 +256,19 @@ export class ObjectProjection {
     if (
       (isStampMapObject(object) && view.display instanceof Sprite) ||
       (object.type === 'text' && view.display instanceof Text) ||
-      (object.type === 'marker' && view.display instanceof Graphics)
+      (object.type === 'marker' &&
+        (view.display instanceof Graphics || view.display instanceof Sprite))
     ) {
-      applyTransform(view.display, object, isStampMapObject(object) ? object : undefined);
+      applyTransform(view.display, object, object);
       view.display.alpha = object.opacity;
       if (isStampMapObject(object) && view.display instanceof Sprite)
         view.display.tint = object.tint ? Number.parseInt(object.tint.slice(1, 7), 16) : 0xffffff;
-      else this.redraw(view);
+      else if (view.display instanceof Graphics) this.redraw(view);
     } else {
       this.redraw(view);
     }
-    view.display.visible = object.visible && this.isInVisibleRect(object) && this.isInZoomRange(object);
+    view.display.visible =
+      object.visible && this.isInVisibleRect(object) && this.isInZoomRange(object);
     view.display.zIndex = object.zIndex;
     if (parent) sortTargets.add(parent);
   }
@@ -252,7 +292,10 @@ export class ObjectProjection {
     if (!this.theme) return;
     if (view.object.type === 'text' && view.display instanceof Text) {
       view.display.text = view.object.text;
-      view.display.anchor.set(view.object.align === 'left' ? 0 : view.object.align === 'right' ? 1 : 0.5, 0.5);
+      view.display.anchor.set(
+        view.object.align === 'left' ? 0 : view.object.align === 'right' ? 1 : 0.5,
+        0.5,
+      );
       view.display.style = {
         fontFamily: this.theme.defaultFontFamily,
         fontSize: view.object.fontSize,
@@ -268,14 +311,19 @@ export class ObjectProjection {
       drawTerrainStroke(view.display, view.object, this.theme);
     else if (view.object.type === 'marker') {
       const radius = 14;
-      view.display.clear().circle(0, -radius * 0.45, radius)
+      view.display
+        .clear()
+        .circle(0, -radius * 0.45, radius)
         .fill({ color: Number.parseInt(this.theme.coast.slice(1), 16), alpha: view.object.opacity })
         .stroke({ color: Number.parseInt(this.theme.text.slice(1), 16), width: 2 })
         .moveTo(-7, 5)
         .lineTo(0, 18)
         .lineTo(7, 5)
         .closePath()
-        .fill({ color: Number.parseInt(this.theme.coast.slice(1), 16), alpha: view.object.opacity });
+        .fill({
+          color: Number.parseInt(this.theme.coast.slice(1), 16),
+          alpha: view.object.opacity,
+        });
     }
   }
 
@@ -283,10 +331,11 @@ export class ObjectProjection {
     return this.visibleRect === null || rectsIntersect(this.visibleRect, objectBounds(object));
   }
 
-
   private isInZoomRange(object: MapObject): boolean {
     if (object.type !== 'marker') return true;
-    return (object.minZoom === null || this.zoom >= object.minZoom) &&
-      (object.maxZoom === null || this.zoom <= object.maxZoom);
+    return (
+      (object.minZoom === null || this.zoom >= object.minZoom) &&
+      (object.maxZoom === null || this.zoom <= object.maxZoom)
+    );
   }
 }

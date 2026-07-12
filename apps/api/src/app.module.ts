@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { OwnershipModule } from './ownership/ownership.module.js';
 import { MapsModule } from './maps/maps.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { AssetsModule } from './assets/assets.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { StorageModule } from './storage/storage.module.js';
     OwnershipModule,
     MapsModule,
     StorageModule,
+    AssetsModule,
     ThrottlerModule.forRootAsync({
       imports: [AppConfigModule],
       inject: [APP_CONFIG],

@@ -144,6 +144,14 @@ export class MapRenderer {
       objects: [...this.mapObjects.values()],
       requestedLongEdge,
       constraints: { deviceMaxTextureSize: this.getExportMaxTextureSize() },
+      loadCustomTexture: async (assetId) => {
+        const lease = this.assets.acquire(assetId);
+        try {
+          return await lease.texture;
+        } finally {
+          lease.release();
+        }
+      },
     });
   }
 

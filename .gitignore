@@ -22,6 +22,10 @@ test-results/
 apps/api/storage/*
 !apps/api/storage/.gitkeep
 !apps/api/storage/README.md
+# pnpm runs API scripts with apps/api as cwd; ignore runtime roots configured
+# from the repository-level .env without ever ignoring source directories.
+apps/api/apps/api/storage/
+apps/api/apps/api/storage-test/
 apps/api/src/generated/prisma/
 
 # OS files

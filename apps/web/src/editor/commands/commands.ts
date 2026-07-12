@@ -266,7 +266,9 @@ export class DrawTerrainStrokeCommand extends CreateObjectCommand {
 
 function locationInput(location: Location) {
   const omitted = new Set(['mapId', 'markerObjectId', 'createdAt', 'updatedAt']);
-  return Object.fromEntries(Object.entries(location).filter(([key]) => !omitted.has(key))) as LocationInput;
+  return Object.fromEntries(
+    Object.entries(location).filter(([key]) => !omitted.has(key)),
+  ) as LocationInput;
 }
 
 /** Creates a location and its primary marker in one history and autosave batch. */
@@ -274,7 +276,12 @@ export class CreateLocationCommand extends SnapshotCommand {
   readonly id = 'location.create';
   readonly label = 'Create location';
 
-  constructor(private readonly location: Location, private readonly marker: MapObject) { super(); }
+  constructor(
+    private readonly location: Location,
+    private readonly marker: MapObject,
+  ) {
+    super();
+  }
 
   execute(context: CommandContext): CommandExecution {
     if (this.forward) return this.redo();
@@ -282,15 +289,34 @@ export class CreateLocationCommand extends SnapshotCommand {
       throw new Error('Location marker must reference the created location.');
     if (context.getLocation(this.location.id) || context.getObject(this.marker.id))
       throw new Error('Location or marker ID already exists.');
-    const parsedLocation = locationSchema.parse({ ...this.location, markerObjectId: this.marker.id });
+    const parsedLocation = locationSchema.parse({
+      ...this.location,
+      markerObjectId: this.marker.id,
+    });
     const marker = normalizedObject(context, this.marker);
     this.forward = [
-      { type: 'location.create', location: parsedLocation, operation: { type: 'location.create', location: locationInput(parsedLocation) } },
-      { type: 'object.create', object: marker, operation: { type: 'object.create', object: objectInput(marker) } },
+      {
+        type: 'location.create',
+        location: parsedLocation,
+        operation: { type: 'location.create', location: locationInput(parsedLocation) },
+      },
+      {
+        type: 'object.create',
+        object: marker,
+        operation: { type: 'object.create', object: objectInput(marker) },
+      },
     ];
     this.inverse = [
-      { type: 'object.delete', objectId: marker.id, operation: { type: 'object.delete', objectId: marker.id } },
-      { type: 'location.delete', locationId: parsedLocation.id, operation: { type: 'location.delete', locationId: parsedLocation.id } },
+      {
+        type: 'object.delete',
+        objectId: marker.id,
+        operation: { type: 'object.delete', objectId: marker.id },
+      },
+      {
+        type: 'location.delete',
+        locationId: parsedLocation.id,
+        operation: { type: 'location.delete', locationId: parsedLocation.id },
+      },
     ];
     return { patches: this.forward };
   }
@@ -299,16 +325,119 @@ export class CreateLocationCommand extends SnapshotCommand {
 export class UpdateLocationCommand extends SnapshotCommand {
   readonly id = 'location.update';
   readonly label = 'Update location';
-  constructor(private readonly locationId: string, private readonly changes: LocationChanges) { super(); }
+  constructor(
+    private readonly locationId: string,
+    private readonly changes: LocationChanges,
+  ) {
+    super();
+  }
   execute(context: CommandContext): CommandExecution {
     if (this.forward) return this.redo();
     const before = context.getLocation(this.locationId);
     if (!before) throw new Error(`Location ${this.locationId} does not exist.`);
     const changes = locationChangesSchema.parse(this.changes);
-    const after = locationSchema.parse({ ...before, ...changes, updatedAt: new Date().toISOString() });
-    const inverseChanges = Object.fromEntries(Object.keys(changes).map((key) => [key, before[key as keyof Location]])) as LocationChanges;
-    this.forward = [{ type: 'location.replace', location: after, operation: { type: 'location.update', locationId: before.id, changes } }];
-    this.inverse = [{ type: 'location.replace', location: before, operation: { type: 'location.update', locationId: before.id, changes: locationChangesSchema.parse(inverseChanges) } }];
+    const after = locationSchema.parse({
+      ...before,
+      ...changes,
+      updatedAt: new Date().toISOString(),
+    });
+    const inverseChanges = Object.fromEntries(
+      Object.keys(changes).map((key) => [key, before[key as keyof Location]]),
+    ) as LocationChanges;
+    this.forward = [
+      {
+        type: 'location.replace',
+        location: after,
+        operation: { type: 'location.update', locationId: before.id, changes },
+      },
+    ];
+    this.inverse = [
+      {
+        type: 'location.replace',
+        location: before,
+        operation: {
+          type: 'location.update',
+          locationId: before.id,
+          changes: locationChangesSchema.parse(inverseChanges),
+        },
+      },
+    ];
+    return { patches: this.forward };
+  }
+}
+
+/** Keeps the location icon and its primary marker icon in one history/save batch. */
+export class UpdateLocationIconCommand extends SnapshotCommand {
+  readonly id = 'location.update-icon';
+  readonly label = 'Update location icon';
+  constructor(
+    private readonly locationId: string,
+    private readonly iconAssetId: string | null,
+  ) {
+    super();
+  }
+  execute(context: CommandContext): CommandExecution {
+    if (this.forward) return this.redo();
+    const location = context.getLocation(this.locationId);
+    if (!location) throw new Error(`Location ${this.locationId} does not exist.`);
+    const marker = location.markerObjectId ? context.getObject(location.markerObjectId) : undefined;
+    if (marker && marker.type !== 'marker') throw new Error('Location primary marker is invalid.');
+    const updatedLocation = locationSchema.parse({
+      ...location,
+      iconAssetId: this.iconAssetId,
+      updatedAt: new Date().toISOString(),
+    });
+    const updatedMarker = marker
+      ? mapObjectSchema.parse({ ...marker, iconAssetId: this.iconAssetId })
+      : undefined;
+    this.forward = [
+      {
+        type: 'location.replace',
+        location: updatedLocation,
+        operation: {
+          type: 'location.update',
+          locationId: location.id,
+          changes: { iconAssetId: this.iconAssetId },
+        },
+      },
+      ...(updatedMarker
+        ? [
+            {
+              type: 'object.replace' as const,
+              object: updatedMarker,
+              operation: {
+                type: 'object.update' as const,
+                objectId: marker!.id,
+                changes: { iconAssetId: this.iconAssetId },
+              },
+            },
+          ]
+        : []),
+    ];
+    this.inverse = [
+      {
+        type: 'location.replace',
+        location,
+        operation: {
+          type: 'location.update',
+          locationId: location.id,
+          changes: { iconAssetId: location.iconAssetId },
+        },
+      },
+      ...(marker
+        ? [
+            {
+              type: 'object.replace' as const,
+              object: marker,
+              operation: {
+                type: 'object.update' as const,
+                objectId: marker.id,
+                changes: { iconAssetId: marker.iconAssetId },
+              },
+            },
+          ]
+        : []),
+    ];
     return { patches: this.forward };
   }
 }
@@ -316,19 +445,45 @@ export class UpdateLocationCommand extends SnapshotCommand {
 export class DeleteLocationCommand extends SnapshotCommand {
   readonly id = 'location.delete';
   readonly label = 'Delete location';
-  constructor(private readonly locationId: string) { super(); }
+  constructor(private readonly locationId: string) {
+    super();
+  }
   execute(context: CommandContext): CommandExecution {
     if (this.forward) return this.redo();
     const location = context.getLocation(this.locationId);
     if (!location) throw new Error(`Location ${this.locationId} does not exist.`);
     const marker = location.markerObjectId ? context.getObject(location.markerObjectId) : undefined;
     this.forward = [
-      ...(marker ? [{ type: 'object.delete' as const, objectId: marker.id, operation: { type: 'object.delete' as const, objectId: marker.id } }] : []),
-      { type: 'location.delete', locationId: location.id, operation: { type: 'location.delete', locationId: location.id } },
+      ...(marker
+        ? [
+            {
+              type: 'object.delete' as const,
+              objectId: marker.id,
+              operation: { type: 'object.delete' as const, objectId: marker.id },
+            },
+          ]
+        : []),
+      {
+        type: 'location.delete',
+        locationId: location.id,
+        operation: { type: 'location.delete', locationId: location.id },
+      },
     ];
     this.inverse = [
-      { type: 'location.create', location, operation: { type: 'location.create', location: locationInput(location) } },
-      ...(marker ? [{ type: 'object.create' as const, object: marker, operation: { type: 'object.create' as const, object: objectInput(marker) } }] : []),
+      {
+        type: 'location.create',
+        location,
+        operation: { type: 'location.create', location: locationInput(location) },
+      },
+      ...(marker
+        ? [
+            {
+              type: 'object.create' as const,
+              object: marker,
+              operation: { type: 'object.create' as const, object: objectInput(marker) },
+            },
+          ]
+        : []),
     ];
     return { patches: this.forward };
   }
@@ -484,12 +639,20 @@ export class TransformObjectsCommand extends SnapshotCommand {
         forward.push({
           type: 'location.replace',
           location: movedLocation,
-          operation: { type: 'location.update', locationId: location.id, changes: { x: next.x, y: next.y } },
+          operation: {
+            type: 'location.update',
+            locationId: location.id,
+            changes: { x: next.x, y: next.y },
+          },
         });
         inverse.unshift({
           type: 'location.replace',
           location,
-          operation: { type: 'location.update', locationId: location.id, changes: { x: location.x, y: location.y } },
+          operation: {
+            type: 'location.update',
+            locationId: location.id,
+            changes: { x: location.x, y: location.y },
+          },
         });
       }
     }

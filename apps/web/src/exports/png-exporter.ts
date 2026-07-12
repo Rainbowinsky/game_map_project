@@ -55,6 +55,7 @@ export interface PngExportInput {
   readonly objects: readonly MapObject[];
   readonly requestedLongEdge: number;
   readonly constraints?: PngExportConstraints;
+  readonly loadCustomTexture?: (assetId: string) => Promise<Texture>;
 }
 
 interface BlobCanvas {
@@ -72,6 +73,19 @@ function applySpriteTransform(sprite: Sprite, object: StampMapObject): void {
   );
   sprite.alpha = object.opacity;
   sprite.tint = object.tint ? Number.parseInt(object.tint.slice(1, 7), 16) : 0xffffff;
+  sprite.zIndex = object.zIndex;
+}
+
+function applyMarkerSpriteTransform(
+  sprite: Sprite,
+  object: Extract<MapObject, { type: 'marker' }>,
+): void {
+  sprite.anchor.set(0.5);
+  sprite.position.set(object.x, object.y);
+  sprite.rotation = object.rotation;
+  const size = 32 / Math.max(sprite.texture.width, sprite.texture.height);
+  sprite.scale.set(object.scaleX * size, object.scaleY * size);
+  sprite.alpha = object.opacity;
   sprite.zIndex = object.zIndex;
 }
 
@@ -117,13 +131,22 @@ async function canvasToPngBlob(canvas: BlobCanvas): Promise<Blob> {
 export async function loadExportTextures(
   objects: readonly MapObject[],
   loadTexture: (url: string) => Promise<Texture> = (url) => Assets.load<Texture>(url),
+  loadCustomTexture?: (assetId: string) => Promise<Texture>,
 ): Promise<Map<string, Texture>> {
   const requested = new Map<string, string>();
+  const custom = new Set<string>();
   const missing = new Set<string>();
-  for (const object of objects.filter(isStampMapObject)) {
-    const asset = getStampAsset(object.assetId);
-    if (asset) requested.set(asset.id, asset.url);
-    else missing.add(object.assetId);
+  for (const object of objects) {
+    const assetId = isStampMapObject(object)
+      ? object.assetId
+      : object.type === 'marker'
+        ? object.iconAssetId
+        : null;
+    if (!assetId) continue;
+    const builtIn = getStampAsset(assetId);
+    if (builtIn) requested.set(builtIn.id, builtIn.url);
+    else if (loadCustomTexture) custom.add(assetId);
+    else missing.add(assetId);
   }
 
   const textures = new Map<string, Texture>();
@@ -131,6 +154,15 @@ export async function loadExportTextures(
     [...requested].map(async ([assetId, url]) => {
       try {
         textures.set(assetId, await loadTexture(url));
+      } catch {
+        missing.add(assetId);
+      }
+    }),
+  );
+  await Promise.all(
+    [...custom].map(async (assetId) => {
+      try {
+        textures.set(assetId, await loadCustomTexture!(assetId));
       } catch {
         missing.add(assetId);
       }
@@ -159,14 +191,14 @@ export async function exportMapToPng({
   objects,
   requestedLongEdge,
   constraints,
+  loadCustomTexture,
 }: PngExportInput): Promise<PngExportResult> {
   const plan = createPngExportPlan(document.width, document.height, requestedLongEdge, constraints);
   const visibleLayerIds = effectivelyVisibleLayerIds(layers);
   const exportObjects = objects.filter(
     (object) => object.visible && visibleLayerIds.has(object.layerId),
   );
-  const exportStamps = exportObjects.filter(isStampMapObject);
-  const textures = await loadExportTextures(exportStamps);
+  const textures = await loadExportTextures(exportObjects, undefined, loadCustomTexture);
   const scene = new Container();
   let renderTexture: RenderTexture | null = null;
 
@@ -187,6 +219,12 @@ export async function exportMapToPng({
         if (!texture) continue;
         const sprite = new Sprite(texture);
         applySpriteTransform(sprite, object);
+        parent.addChild(sprite);
+      } else if (object.type === 'marker' && object.iconAssetId) {
+        const texture = textures.get(object.iconAssetId);
+        if (!texture) continue;
+        const sprite = new Sprite(texture);
+        applyMarkerSpriteTransform(sprite, object);
         parent.addChild(sprite);
       } else {
         const graphics = createGeometryGraphics(object, themeTokens);
