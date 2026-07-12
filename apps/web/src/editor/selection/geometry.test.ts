@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createMapDocumentFixture,
+  createPathMapObjectFixture,
+  createRegionMapObjectFixture,
   createStampMapObjectFixture,
 } from '@fantasy-map/map-model/fixtures';
 
@@ -10,6 +12,7 @@ import {
   pickObject,
   selectionBounds,
   transformedObjects,
+  pointInObject,
 } from './geometry.js';
 
 describe('selection geometry', () => {
@@ -80,5 +83,16 @@ describe('selection geometry', () => {
       bounds,
     );
     expect(rotated[first.id]!.rotation).toBeCloseTo(first.rotation + Math.PI / 2);
+  });
+
+  it('uses path segments and polygon interiors for geometry picking', () => {
+    const path = createPathMapObjectFixture();
+    const region = createRegionMapObjectFixture();
+
+    expect(pointInObject({ x: 320, y: 358 }, path)).toBe(true);
+    expect(pointInObject({ x: 350, y: 430 }, path)).toBe(false);
+    expect(pointInObject({ x: 1500, y: 1300 }, region)).toBe(true);
+    expect(pointInObject({ x: 900, y: 900 }, region)).toBe(false);
+    expect(objectBounds(region)).toMatchObject({ x: 997, y: 997 });
   });
 });

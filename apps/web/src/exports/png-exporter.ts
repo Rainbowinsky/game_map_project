@@ -19,6 +19,7 @@ import {
 import { getStampAsset } from '../assets/stamp-assets.js';
 import { drawMapArtwork } from '../renderer/map-artwork.js';
 import { RendererProjection } from '../renderer/RendererProjection.js';
+import { createGeometryGraphics } from '../renderer/geometry-render.js';
 import {
   createPngExportPlan,
   safePngFilename,
@@ -162,10 +163,10 @@ export async function exportMapToPng({
   const plan = createPngExportPlan(document.width, document.height, requestedLongEdge, constraints);
   const visibleLayerIds = effectivelyVisibleLayerIds(layers);
   const exportObjects = objects.filter(
-    (object): object is StampMapObject =>
-      isStampMapObject(object) && object.visible && visibleLayerIds.has(object.layerId),
+    (object) => object.visible && visibleLayerIds.has(object.layerId),
   );
-  const textures = await loadExportTextures(exportObjects);
+  const exportStamps = exportObjects.filter(isStampMapObject);
+  const textures = await loadExportTextures(exportStamps);
   const scene = new Container();
   let renderTexture: RenderTexture | null = null;
 
@@ -180,11 +181,17 @@ export async function exportMapToPng({
 
     for (const object of exportObjects) {
       const parent = projection.getLayerContainer(object.layerId);
-      const texture = textures.get(object.assetId);
-      if (!parent || !texture) continue;
-      const sprite = new Sprite(texture);
-      applySpriteTransform(sprite, object);
-      parent.addChild(sprite);
+      if (!parent) continue;
+      if (isStampMapObject(object)) {
+        const texture = textures.get(object.assetId);
+        if (!texture) continue;
+        const sprite = new Sprite(texture);
+        applySpriteTransform(sprite, object);
+        parent.addChild(sprite);
+      } else {
+        const graphics = createGeometryGraphics(object, themeTokens);
+        if (graphics) parent.addChild(graphics);
+      }
       parent.sortableChildren = true;
     }
     for (const layer of layers) projection.getLayerContainer(layer.id)?.sortChildren();

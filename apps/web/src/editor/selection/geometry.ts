@@ -11,9 +11,77 @@ import { isLayerEffectivelyEditable } from '../layers/layer-tree.js';
 
 const EPSILON = 0.000_001;
 
+function pathHitSegments(object: Extract<MapObject, { type: 'path' }>): [WorldPoint, WorldPoint][] {
+  const segments: [WorldPoint, WorldPoint][] = [];
+  for (let index = 1; index < object.nodes.length; index += 1) {
+    const previous = object.nodes[index - 1]!;
+    const current = object.nodes[index]!;
+    if (!previous.handleOut && !current.handleIn) {
+      segments.push([previous.anchor, current.anchor]);
+      continue;
+    }
+    const p0 = previous.anchor;
+    const p1 = previous.handleOut
+      ? { x: p0.x + previous.handleOut.x, y: p0.y + previous.handleOut.y }
+      : p0;
+    const p3 = current.anchor;
+    const p2 = current.handleIn
+      ? { x: p3.x + current.handleIn.x, y: p3.y + current.handleIn.y }
+      : p3;
+    let last = p0;
+    for (let step = 1; step <= 16; step += 1) {
+      const t = step / 16;
+      const inverse = 1 - t;
+      const next = {
+        x:
+          inverse ** 3 * p0.x +
+          3 * inverse ** 2 * t * p1.x +
+          3 * inverse * t ** 2 * p2.x +
+          t ** 3 * p3.x,
+        y:
+          inverse ** 3 * p0.y +
+          3 * inverse ** 2 * t * p1.y +
+          3 * inverse * t ** 2 * p2.y +
+          t ** 3 * p3.y,
+      };
+      segments.push([last, next]);
+      last = next;
+    }
+  }
+  return segments;
+}
+
 export type TransformMode = 'move' | 'scale' | 'rotate';
 
 export function objectBounds(object: MapObject): WorldRect {
+  if (object.type === 'path' || object.type === 'region') {
+    const points =
+      object.type === 'path'
+        ? object.nodes.flatMap((node) => [
+            node.anchor,
+            ...(node.handleIn
+              ? [{ x: node.anchor.x + node.handleIn.x, y: node.anchor.y + node.handleIn.y }]
+              : []),
+            ...(node.handleOut
+              ? [{ x: node.anchor.x + node.handleOut.x, y: node.anchor.y + node.handleOut.y }]
+              : []),
+          ])
+        : object.vertices;
+    const left = Math.min(...points.map((point) => point.x));
+    const top = Math.min(...points.map((point) => point.y));
+    const right = Math.max(...points.map((point) => point.x));
+    const bottom = Math.max(...points.map((point) => point.y));
+    const padding =
+      object.type === 'path'
+        ? Math.max(object.widthStart, object.widthEnd) / 2
+        : object.strokeWidth;
+    return {
+      x: left - padding,
+      y: top - padding,
+      width: Math.max(EPSILON, right - left + padding * 2),
+      height: Math.max(EPSILON, bottom - top + padding * 2),
+    };
+  }
   const halfWidth = (STAMP_INTRINSIC_SIZE * Math.abs(object.scaleX)) / 2;
   const halfHeight = (STAMP_INTRINSIC_SIZE * Math.abs(object.scaleY)) / 2;
   const cosine = Math.abs(Math.cos(object.rotation));
@@ -52,6 +120,42 @@ export function rectsIntersect(left: WorldRect, right: WorldRect): boolean {
 }
 
 export function pointInObject(point: WorldPoint, object: MapObject): boolean {
+  if (object.type === 'region') {
+    let inside = false;
+    for (
+      let index = 0, previous = object.vertices.length - 1;
+      index < object.vertices.length;
+      previous = index++
+    ) {
+      const currentPoint = object.vertices[index]!;
+      const previousPoint = object.vertices[previous]!;
+      if (
+        currentPoint.y > point.y !== previousPoint.y > point.y &&
+        point.x <
+          ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) /
+            (previousPoint.y - currentPoint.y) +
+            currentPoint.x
+      )
+        inside = !inside;
+    }
+    return inside;
+  }
+  if (object.type === 'path') {
+    const tolerance = Math.max(6, object.widthStart / 2, object.widthEnd / 2);
+    return pathHitSegments(object).some(([start, end]) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSquared = dx * dx + dy * dy;
+      const t =
+        lengthSquared === 0
+          ? 0
+          : Math.max(
+              0,
+              Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared),
+            );
+      return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy)) <= tolerance;
+    });
+  }
   const dx = point.x - object.x;
   const dy = point.y - object.y;
   const cosine = Math.cos(-object.rotation);

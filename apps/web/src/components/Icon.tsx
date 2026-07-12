@@ -13,6 +13,8 @@ type IconName =
   | 'minus'
   | 'pan'
   | 'plus'
+  | 'path'
+  | 'region'
   | 'search'
   | 'select'
   | 'settings'
@@ -88,6 +90,21 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </>
+  ),
+  path: (
+    <>
+      <path d="M4 18c4-9 7 2 11-7 1.2-2.7 2.8-4.3 5-5" />
+      <circle cx="4" cy="18" r="1.5" />
+      <circle cx="20" cy="6" r="1.5" />
+    </>
+  ),
+  region: (
+    <>
+      <path d="m5 5 14 3-3 11-12-4 1-10Z" />
+      <circle cx="5" cy="5" r="1.3" />
+      <circle cx="19" cy="8" r="1.3" />
+      <circle cx="16" cy="19" r="1.3" />
     </>
   ),
   search: (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent, type KeyboardEvent } from 'react';
-import type { MapLayer } from '@fantasy-map/map-model';
+import type { MapLayer, MapLayerType } from '@fantasy-map/map-model';
 
 import type { CommandManager } from '../editor/commands/CommandManager.js';
 import {
@@ -18,14 +18,14 @@ interface LayerPanelProps {
   readonly commandManager: CommandManager;
 }
 
-function freshLayer(documentId: string, order: number): MapLayer {
+function freshLayer(documentId: string, order: number, type: MapLayerType): MapLayer {
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     mapId: documentId,
     parentId: null,
-    name: '新图层',
-    type: 'stamp',
+    name: type === 'vector-path' ? '路径' : type === 'region' ? '区域' : '图章',
+    type,
     order,
     visible: true,
     locked: false,
@@ -59,7 +59,7 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     ? Object.values(objectsById).filter((object) => object.layerId === deleteLayer.id)
     : [];
   const moveTargets = layers.filter(
-    (layer) => layer.id !== deleteId && layer.type === 'stamp' && !layer.locked,
+    (layer) => layer.id !== deleteId && layer.type === deleteLayer?.type && !layer.locked,
   );
 
   useEffect(() => {
@@ -81,10 +81,10 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     }
   };
 
-  const createLayer = () => {
+  const createLayer = (type: 'stamp' | 'vector-path' | 'region') => {
     if (!document) return;
     const rootCount = layers.filter((layer) => layer.parentId === null).length;
-    const layer = freshLayer(document.id, rootCount);
+    const layer = freshLayer(document.id, rootCount, type);
     run(() => commandManager.execute(new CreateLayerCommand(layer)));
     setActiveLayer(layer.id);
     setRenamingId(layer.id);
@@ -198,9 +198,17 @@ export function LayerPanel({ commandManager }: LayerPanelProps) {
     <>
       <div className="layer-actions">
         <span>{layers.length} 个图层</span>
-        <button onClick={createLayer}>
-          <Icon name="plus" /> 新建
-        </button>
+        <div className="layer-create-actions">
+          <button onClick={() => createLayer('stamp')}>
+            <Icon name="plus" /> 图章
+          </button>
+          <button onClick={() => createLayer('vector-path')}>
+            <Icon name="path" /> 路径
+          </button>
+          <button onClick={() => createLayer('region')}>
+            <Icon name="region" /> 区域
+          </button>
+        </div>
       </div>
       <p className="layer-group-note">组层级按缩进显示；P8 暂不提供跨组拖放。</p>
       {message && (

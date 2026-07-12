@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { DEFAULT_STAMP_ASSET_ID } from '../assets/stamp-assets.js';
 
-export type EditorTool = 'select' | 'pan' | 'stamp';
+export type EditorTool = 'select' | 'pan' | 'stamp' | 'road' | 'river' | 'region';
 export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'offline' | 'error' | 'conflict';
 
 interface EditorState {

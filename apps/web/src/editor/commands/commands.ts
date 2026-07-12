@@ -43,6 +43,15 @@ const OBJECT_CHANGE_KEYS = [
   'flipX',
   'flipY',
   'randomSeed',
+  'pathKind',
+  'nodes',
+  'styleToken',
+  'widthStart',
+  'widthEnd',
+  'vertices',
+  'fillToken',
+  'strokeToken',
+  'strokeWidth',
 ] as const;
 
 const LAYER_CHANGE_KEYS = [
@@ -188,8 +197,8 @@ abstract class SnapshotCommand implements EditorCommand {
 }
 
 export class CreateObjectCommand extends SnapshotCommand {
-  readonly id = 'object.create';
-  readonly label = 'Create object';
+  readonly id: string = 'object.create';
+  readonly label: string = 'Create object';
 
   constructor(private readonly requestedObject: MapObject) {
     super();
@@ -222,8 +231,19 @@ export class CreateObjectCommand extends SnapshotCommand {
   }
 }
 
+/** Semantic command names keep drawing history meaningful without bypassing the object operation path. */
+export class CreatePathCommand extends CreateObjectCommand {
+  override readonly id = 'path.create';
+  override readonly label = 'Create path';
+}
+
+export class CreateRegionCommand extends CreateObjectCommand {
+  override readonly id = 'region.create';
+  override readonly label = 'Create region';
+}
+
 export class UpdateObjectCommand extends SnapshotCommand {
-  readonly id = 'object.update';
+  readonly id: string = 'object.update';
   readonly label: string;
   readonly createdAt: number;
 
@@ -283,6 +303,26 @@ export class UpdateObjectCommand extends SnapshotCommand {
     this.inverse = [objectPatch(next.after, this.before)];
     this.lastMergedAt = next.createdAt;
     return this;
+  }
+}
+
+export class UpdatePathGeometryCommand extends UpdateObjectCommand {
+  override readonly id = 'path.geometry.update';
+
+  constructor(objectId: string, nodes: Extract<MapObject, { type: 'path' }>['nodes']) {
+    const x = nodes.reduce((total, node) => total + node.anchor.x, 0) / nodes.length;
+    const y = nodes.reduce((total, node) => total + node.anchor.y, 0) / nodes.length;
+    super(objectId, { nodes, x, y }, `path-geometry:${objectId}`, 'Edit path geometry');
+  }
+}
+
+export class UpdateRegionGeometryCommand extends UpdateObjectCommand {
+  override readonly id = 'region.geometry.update';
+
+  constructor(objectId: string, vertices: Extract<MapObject, { type: 'region' }>['vertices']) {
+    const x = vertices.reduce((total, vertex) => total + vertex.x, 0) / vertices.length;
+    const y = vertices.reduce((total, vertex) => total + vertex.y, 0) / vertices.length;
+    super(objectId, { vertices, x, y }, `region-geometry:${objectId}`, 'Edit region geometry');
   }
 }
 

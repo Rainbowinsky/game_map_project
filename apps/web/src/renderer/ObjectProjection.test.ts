@@ -1,12 +1,16 @@
 import { Container, Texture } from 'pixi.js';
 import type { MapObject } from '@fantasy-map/map-model';
-import { createMapDocumentFixture } from '@fantasy-map/map-model/fixtures';
+import {
+  createMapDocumentFixture,
+  createPathMapObjectFixture,
+} from '@fantasy-map/map-model/fixtures';
 import { describe, expect, it, vi } from 'vitest';
 
 import { STAMP_ASSETS } from '../assets/stamp-assets.js';
 import type { AssetRegistry } from './AssetRegistry.js';
 import { ObjectProjection } from './ObjectProjection.js';
 import { RendererProjection } from './RendererProjection.js';
+import { themeRegistry } from '../themes/ThemeRegistry.js';
 
 function object(id: string, x: number, zIndex = 0): MapObject {
   const document = createMapDocumentFixture();
@@ -74,6 +78,29 @@ describe('ObjectProjection', () => {
 
     projection.removeObject(first.id);
     expect(container?.children.map((child) => child.label)).toEqual([`object:${second.id}`]);
+    root.destroy({ children: true });
+  });
+
+  it('projects path graphics into their semantic layer and redraws them with theme tokens', () => {
+    const root = new Container();
+    const layers = new RendererProjection(root);
+    const document = createMapDocumentFixture();
+    const path = createPathMapObjectFixture();
+    const source = document.layers[1]!;
+    const pathLayer = { ...source, id: path.layerId, type: 'vector-path' as const, order: 2 };
+    layers.sync([...document.layers, pathLayer]);
+    const projection = new ObjectProjection(layers, assets());
+
+    projection.setTheme(themeRegistry.resolve('mvp-classic').tokens);
+    projection.sync([path]);
+    expect(layers.getLayerContainer(path.layerId)?.children.map((child) => child.label)).toEqual([
+      `object:${path.id}`,
+    ]);
+    expect(projection.getVisibleObjectCount()).toBe(1);
+
+    projection.setTheme(themeRegistry.resolve('mvp-sunlit-atlas').tokens);
+    projection.removeObject(path.id);
+    expect(layers.getLayerContainer(path.layerId)?.children).toHaveLength(0);
     root.destroy({ children: true });
   });
 });

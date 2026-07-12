@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createMapChunkPayloadFixture,
   createMapDocumentFixture,
+  createPathMapObjectFixture,
   createStampMapObjectFixture,
 } from '@fantasy-map/map-model/fixtures';
 import type { MapObject } from '@fantasy-map/map-model';
@@ -10,10 +11,12 @@ import { useMapStore } from '../../stores/map-store.js';
 import { CommandManager } from './CommandManager.js';
 import {
   CreateLayerCommand,
+  CreatePathCommand,
   DeleteLayerCommand,
   TransformObjectsCommand,
   UpdateLayerCommand,
   UpdateObjectCommand,
+  UpdatePathGeometryCommand,
 } from './commands.js';
 import type { EditorCommand } from './domain-patch.js';
 import { createMapCommandContext } from './map-command-context.js';
@@ -82,6 +85,46 @@ describe('CommandManager', () => {
     expect(currentObject()).toMatchObject({ x: 512, y: 512, chunk: { x: 0, y: 0 } });
     expect(events).toEqual(['execute', 'undo', 'redo']);
     expect(operations).toEqual(['object.update', 'object.update', 'object.update']);
+  });
+
+  it('creates and edits path geometry through persisted object operations', () => {
+    const manager = loadedManager();
+    const path = createPathMapObjectFixture();
+    const operations: unknown[] = [];
+    manager.patches.subscribe((event) => operations.push(...event.operations));
+    const sourceLayer = useMapStore.getState().document?.layers[1];
+    if (!sourceLayer) throw new Error('Expected fixture layer.');
+    const pathLayer = {
+      ...sourceLayer,
+      id: path.layerId,
+      name: 'Paths',
+      type: 'vector-path' as const,
+      order: 2,
+    };
+
+    const transaction = manager.beginTransaction('Create path layer and object');
+    transaction.add(new CreateLayerCommand(pathLayer));
+    transaction.add(new CreatePathCommand(path));
+    expect(transaction.commit()).toBe(true);
+    expect(useMapStore.getState().objectsById[path.id]).toMatchObject({ type: 'path' });
+
+    const nodes = path.nodes.map((node, index) =>
+      index === 1 ? { ...node, anchor: { x: 720, y: 560 } } : node,
+    );
+    expect(manager.execute(new UpdatePathGeometryCommand(path.id, nodes))).toBe(true);
+    expect(useMapStore.getState().objectsById[path.id]).toMatchObject({ nodes });
+    expect(
+      operations.filter((operation) => (operation as { type: string }).type.startsWith('object.')),
+    ).toMatchObject([
+      { type: 'object.create', object: { type: 'path' } },
+      { type: 'object.update', objectId: path.id, changes: { nodes } },
+    ]);
+
+    manager.undo();
+    expect(useMapStore.getState().objectsById[path.id]).toMatchObject({ nodes: path.nodes });
+    manager.undo();
+    expect(useMapStore.getState().objectsById[path.id]).toBeUndefined();
+    expect(useMapStore.getState().layersById[path.layerId]).toBeUndefined();
   });
 
   it('clears redo after a new execute', () => {

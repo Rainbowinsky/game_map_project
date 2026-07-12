@@ -37,6 +37,19 @@ export function ObjectInspector({ commandManager }: ObjectInspectorProps) {
     );
     rerender((version) => version + 1);
   };
+  const updateGeometryNumber = (key: 'widthStart' | 'widthEnd' | 'strokeWidth', value: string) => {
+    if (!object) return;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    commandManager.execute(
+      new UpdateObjectCommand(
+        object.id,
+        { [key]: parsed } as ObjectChanges,
+        `property:${object.id}:${key}`,
+      ),
+    );
+    rerender((version) => version + 1);
+  };
 
   if (selection.length === 0 || objects.length === 0) {
     return (
@@ -55,7 +68,7 @@ export function ObjectInspector({ commandManager }: ObjectInspectorProps) {
       <p className="kicker">SELECTION</p>
       <h3>{objects.length === 1 ? (object?.name ?? '未命名图章') : `${objects.length} 个图章`}</h3>
       <p>{objects.length === 1 ? object?.type.toUpperCase() : 'MULTI-SELECTION'}</p>
-      {object && (
+      {object?.type === 'stamp' && (
         <div className="object-fields">
           {(
             [
@@ -79,6 +92,46 @@ export function ObjectInspector({ commandManager }: ObjectInspectorProps) {
           ))}
         </div>
       )}
+      {object?.type === 'path' && (
+        <div className="object-fields">
+          <label>
+            <span>起点宽度</span>
+            <input
+              type="number"
+              min="0.1"
+              step="1"
+              defaultValue={object.widthStart}
+              onBlur={(event) => updateGeometryNumber('widthStart', event.currentTarget.value)}
+            />
+          </label>
+          <label>
+            <span>终点宽度</span>
+            <input
+              type="number"
+              min="0.1"
+              step="1"
+              defaultValue={object.widthEnd}
+              onBlur={(event) => updateGeometryNumber('widthEnd', event.currentTarget.value)}
+            />
+          </label>
+          <p>{object.nodes.length} 个节点 · 拖动画布上的节点可编辑几何</p>
+        </div>
+      )}
+      {object?.type === 'region' && (
+        <div className="object-fields">
+          <label>
+            <span>描边宽度</span>
+            <input
+              type="number"
+              min="0.1"
+              step="1"
+              defaultValue={object.strokeWidth}
+              onBlur={(event) => updateGeometryNumber('strokeWidth', event.currentTarget.value)}
+            />
+          </label>
+          <p>{object.vertices.length} 个顶点 · 自交修改会被拒绝</p>
+        </div>
+      )}
       <div className="object-action-grid">
         <button onClick={() => duplicateObjects(commandManager)}>复制</button>
         <button onClick={() => moveSelectionInStack(commandManager, 'forward')}>前移</button>
@@ -87,7 +140,11 @@ export function ObjectInspector({ commandManager }: ObjectInspectorProps) {
           删除
         </button>
       </div>
-      <p className="object-hint">拖动边框移动，角点缩放，顶部圆点旋转；Esc 可取消当前手势。</p>
+      <p className="object-hint">
+        {object?.type === 'path' || object?.type === 'region'
+          ? '拖动节点编辑几何；区域不会接受自交形状；Esc 可取消当前手势。'
+          : '拖动边框移动，角点缩放，顶部圆点旋转；Esc 可取消当前手势。'}
+      </p>
     </div>
   );
 }

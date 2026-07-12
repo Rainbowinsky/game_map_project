@@ -5,6 +5,8 @@ const ids = {
   project: '70000000-0000-4000-8000-000000000002',
   map: '70000000-0000-4000-8000-000000000003',
   layer: '70000000-0000-4000-8000-000000000004',
+  pathLayer: '70000000-0000-4000-8000-000000000007',
+  regionLayer: '70000000-0000-4000-8000-000000000008',
   map2: '70000000-0000-4000-8000-000000000005',
   chunk: '70000000-0000-4000-8000-000000000006',
 };
@@ -45,6 +47,34 @@ const mapDocument = (id = ids.map, name = '灰烬海岸', revision = 0) => ({
       name: 'Landmarks',
       type: 'stamp',
       order: 0,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: 'normal',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: ids.pathLayer,
+      mapId: id,
+      parentId: null,
+      name: 'Paths',
+      type: 'vector-path',
+      order: 1,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: 'normal',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: ids.regionLayer,
+      mapId: id,
+      parentId: null,
+      name: 'Regions',
+      type: 'region',
+      order: 2,
       visible: true,
       locked: false,
       opacity: 1,
@@ -335,6 +365,51 @@ test('places, selects, transforms, duplicates and deletes a stamp', async ({ pag
   await page.keyboard.press('Delete');
   await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
   await page.getByRole('button', { name: '撤销' }).click();
+  await expect(page.getByTestId('visible-object-count')).toContainText('2 / 2');
+  await expect(page.getByTestId('save-status')).toContainText('已保存');
+});
+
+test('draws and edits a road and creates a valid region', async ({ page }) => {
+  await prepare(page);
+  await page.goto(`/editor/${ids.map}`);
+  const canvas = page.getByTestId('pixi-host');
+  await expect(canvas.locator('canvas')).toHaveCount(1);
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error('Map canvas has no visible bounds.');
+  const point = (x: number, y: number) => ({
+    button: 0,
+    pointerId: 21,
+    clientX: bounds.x + bounds.width * x,
+    clientY: bounds.y + bounds.height * y,
+  });
+
+  await page.getByRole('button', { name: '道路' }).click();
+  await canvas.dispatchEvent('pointerdown', point(0.4, 0.45));
+  await canvas.dispatchEvent('pointerup', point(0.4, 0.45));
+  await canvas.dispatchEvent('pointermove', point(0.6, 0.55));
+  await canvas.dispatchEvent('pointerdown', point(0.6, 0.55));
+  await canvas.dispatchEvent('pointerup', point(0.6, 0.55));
+  await canvas.dispatchEvent('pointerdown', { ...point(0.6, 0.55), detail: 2 });
+  await canvas.dispatchEvent('pointerup', point(0.6, 0.55));
+  await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
+
+  await canvas.dispatchEvent('pointerdown', point(0.4, 0.45));
+  await canvas.dispatchEvent('pointermove', point(0.43, 0.42));
+  await canvas.dispatchEvent('pointerup', point(0.43, 0.42));
+  await page.getByRole('button', { name: '撤销' }).click();
+  await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
+
+  await page.getByLabel('区域', { exact: true }).click();
+  for (const [x, y] of [
+    [0.35, 0.35],
+    [0.55, 0.32],
+    [0.5, 0.48],
+  ] as const) {
+    await canvas.dispatchEvent('pointerdown', point(x, y));
+    await canvas.dispatchEvent('pointerup', point(x, y));
+  }
+  await canvas.dispatchEvent('pointerdown', point(0.35, 0.35));
+  await canvas.dispatchEvent('pointerup', point(0.35, 0.35));
   await expect(page.getByTestId('visible-object-count')).toContainText('2 / 2');
   await expect(page.getByTestId('save-status')).toContainText('已保存');
 });

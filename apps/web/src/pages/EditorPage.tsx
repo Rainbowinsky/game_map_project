@@ -35,12 +35,19 @@ import { useEditorAutosave } from '../editor/autosave/use-editor-autosave.js';
 import { downloadPngBlob } from '../exports/png-exporter.js';
 import { themeRegistry } from '../themes/ThemeRegistry.js';
 
-const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
-  [
-    { id: 'select', icon: 'select', label: '选择', key: 'V' },
-    { id: 'pan', icon: 'pan', label: '平移', key: 'H' },
-    { id: 'stamp', icon: 'stamp', label: '图章', key: 'S' },
-  ];
+const toolInfo: {
+  id: EditorTool;
+  icon: 'select' | 'pan' | 'stamp' | 'path' | 'region';
+  label: string;
+  key: string;
+}[] = [
+  { id: 'select', icon: 'select', label: '选择', key: 'V' },
+  { id: 'pan', icon: 'pan', label: '平移', key: 'H' },
+  { id: 'stamp', icon: 'stamp', label: '图章', key: 'S' },
+  { id: 'road', icon: 'path', label: '道路', key: 'R' },
+  { id: 'river', icon: 'path', label: '河流', key: 'W' },
+  { id: 'region', icon: 'region', label: '区域', key: 'P' },
+];
 
 const saveLabels = {
   saved: '已保存',
@@ -175,8 +182,16 @@ export function EditorPage() {
         if (moveSelectionInStack(commandManager, 'forward')) event.preventDefault();
       } else if (event.key === '[') {
         if (moveSelectionInStack(commandManager, 'backward')) event.preventDefault();
-      } else if (!modifier && !event.altKey && ['v', 'h', 's'].includes(key)) {
-        setTool(key === 'v' ? 'select' : key === 'h' ? 'pan' : 'stamp');
+      } else if (!modifier && !event.altKey && ['v', 'h', 's', 'r', 'w', 'p'].includes(key)) {
+        const shortcuts: Record<string, EditorTool> = {
+          v: 'select',
+          h: 'pan',
+          s: 'stamp',
+          r: 'road',
+          w: 'river',
+          p: 'region',
+        };
+        setTool(shortcuts[key]!);
       }
     };
     window.addEventListener('keydown', onKeyDown);

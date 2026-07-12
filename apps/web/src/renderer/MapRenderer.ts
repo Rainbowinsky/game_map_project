@@ -27,6 +27,7 @@ import {
 } from '../exports/png-exporter.js';
 import { colorToNumber, drawMapArtwork } from './map-artwork.js';
 import { ObjectProjection } from './ObjectProjection.js';
+import { drawPath, drawRegion } from './geometry-render.js';
 import { RendererProjection } from './RendererProjection.js';
 import { themeRegistry } from '../themes/ThemeRegistry.js';
 
@@ -50,6 +51,7 @@ export class MapRenderer {
   private readonly objects = new ObjectProjection(this.projection, this.assets);
   private readonly worldGrid = new Graphics();
   private readonly worldOverlay = new Container();
+  private readonly geometryPreview = new Graphics();
   private readonly selectionOverlay = new Graphics();
   private readonly marqueeOverlay = new Graphics();
   private readonly mapBoundary = new Graphics();
@@ -97,7 +99,7 @@ export class MapRenderer {
     this.application.stage.addChild(this.worldRoot, this.screenOverlay);
     this.worldRoot.addChild(this.mapBackground, this.mapClipRoot, this.mapBoundary);
     this.mapClipRoot.addChild(this.layerRoot, this.worldGrid, this.worldOverlay);
-    this.worldOverlay.addChild(this.selectionOverlay, this.marqueeOverlay);
+    this.worldOverlay.addChild(this.geometryPreview, this.selectionOverlay, this.marqueeOverlay);
     this.projection.sync(this.document.layers);
     this.drawStaticScene();
     this.initialized = true;
@@ -200,6 +202,33 @@ export class MapRenderer {
     this.previewObjects = null;
     this.objects.clearPreview();
     this.drawSelection();
+  }
+
+  previewGeometry(object: MapObject | null): void {
+    this.geometryPreview.clear();
+    if (!object) return;
+    if (object.type === 'path')
+      drawPath(this.geometryPreview, { ...object, opacity: 0.72 }, this.themeTokens);
+    else if (object.type === 'region')
+      drawRegion(this.geometryPreview, { ...object, opacity: 0.72 }, this.themeTokens);
+  }
+
+  hitSelectedGeometryNode(point: WorldPoint): { objectId: string; index: number } | null {
+    const tolerance = 11 / this.camera.zoom;
+    for (const objectId of this.selectedIds) {
+      const object = this.mapObjects.get(objectId);
+      const points =
+        object?.type === 'path'
+          ? object.nodes.map((node) => node.anchor)
+          : object?.type === 'region'
+            ? object.vertices
+            : [];
+      const index = points.findIndex(
+        (candidate) => Math.hypot(point.x - candidate.x, point.y - candidate.y) <= tolerance,
+      );
+      if (index >= 0) return { objectId, index };
+    }
+    return null;
   }
 
   showMarquee(rect: WorldRect | null): void {
@@ -316,6 +345,24 @@ export class MapRenderer {
 
   private drawSelection(): void {
     this.selectionOverlay.clear();
+    const selectedGeometry = this.selectedIds
+      .map((id) => this.mapObjects.get(id))
+      .find((object) => object?.type === 'path' || object?.type === 'region');
+    if (selectedGeometry?.type === 'path' || selectedGeometry?.type === 'region') {
+      const points =
+        selectedGeometry.type === 'path'
+          ? selectedGeometry.nodes.map((node) => node.anchor)
+          : selectedGeometry.vertices;
+      const radius = 5.5 / this.camera.zoom;
+      const line = 1.5 / this.camera.zoom;
+      for (const point of points) {
+        this.selectionOverlay
+          .circle(point.x, point.y, radius)
+          .fill({ color: colorToNumber(this.themeTokens.text), alpha: 1 })
+          .stroke({ color: colorToNumber(this.themeTokens.selection), width: line });
+      }
+      return;
+    }
     const bounds = this.currentSelectionBounds();
     if (!bounds || this.camera.zoom <= 0) return;
     const line = 1.5 / this.camera.zoom;

@@ -1319,6 +1319,19 @@ svg {
 .pixi-host.is-stamp-tool {
   cursor: crosshair;
 }
+
+.pixi-host.is-geometry-tool {
+  cursor: crosshair;
+}
+
+.layer-create-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.layer-create-actions button {
+  padding-inline: 0.45rem;
+}
 .pixi-host.is-transforming {
   cursor: move;
 }

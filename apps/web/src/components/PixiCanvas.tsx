@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import {
+  mapObjectSchema,
   toChunkCoordinate,
   type CameraState,
   type MapDocument,
   type MapObject,
+  type PathKind,
   type ObjectTransform,
   type ScreenPoint,
   type WorldPoint,
@@ -12,7 +14,14 @@ import {
 
 import { getStampAsset, stampPlacementScale } from '../assets/stamp-assets.js';
 import { CameraController, type CameraSnapshot } from '../camera/CameraController.js';
-import { CreateObjectCommand, TransformObjectsCommand } from '../editor/commands/commands.js';
+import {
+  CreateObjectCommand,
+  CreatePathCommand,
+  CreateRegionCommand,
+  TransformObjectsCommand,
+  UpdatePathGeometryCommand,
+  UpdateRegionGeometryCommand,
+} from '../editor/commands/commands.js';
 import type { CommandManager } from '../editor/commands/CommandManager.js';
 import type { PatchEvent } from '../editor/commands/patch-bus.js';
 import { isLayerEffectivelyEditable } from '../editor/layers/layer-tree.js';
@@ -67,7 +76,20 @@ interface MarqueeGesture {
   readonly preserveSelection: boolean;
 }
 
-type EditGesture = TransformGesture | MarqueeGesture;
+interface GeometryNodeGesture {
+  readonly kind: 'geometry-node';
+  readonly object: Extract<MapObject, { type: 'path' | 'region' }>;
+  readonly nodeIndex: number;
+  candidate: Extract<MapObject, { type: 'path' | 'region' }> | null;
+}
+
+type EditGesture = TransformGesture | MarqueeGesture | GeometryNodeGesture;
+
+interface DrawingGesture {
+  readonly tool: 'road' | 'river' | 'region';
+  readonly points: readonly WorldPoint[];
+  readonly hover: WorldPoint;
+}
 
 function localPoint(
   event: PointerEvent | WheelEvent | DragEvent,
@@ -88,6 +110,88 @@ function editableStampLayerId(): string | null {
       .filter((layer) => layer.type === 'stamp' && isLayerEffectivelyEditable(layer.id, layersById))
       .sort((left, right) => right.order - left.order)[0]?.id ?? null
   );
+}
+
+function editableGeometryLayerId(type: 'vector-path' | 'region'): string | null {
+  const { activeLayerId } = useEditorStore.getState();
+  const { layersById } = useMapStore.getState();
+  const active = activeLayerId ? layersById[activeLayerId] : undefined;
+  if (active?.type === type && isLayerEffectivelyEditable(active.id, layersById)) return active.id;
+  return (
+    Object.values(layersById)
+      .filter((layer) => layer.type === type && isLayerEffectivelyEditable(layer.id, layersById))
+      .sort((left, right) => right.order - left.order)[0]?.id ?? null
+  );
+}
+
+function clampToMap(document: MapDocument, point: WorldPoint): WorldPoint {
+  return {
+    x: Math.max(0, Math.min(document.width, point.x)),
+    y: Math.max(0, Math.min(document.height, point.y)),
+  };
+}
+
+function createGeometryObject(
+  document: MapDocument,
+  tool: DrawingGesture['tool'],
+  inputPoints: readonly WorldPoint[],
+): Extract<MapObject, { type: 'path' | 'region' }> {
+  const points = inputPoints.map((point) => clampToMap(document, point));
+  const layerType = tool === 'region' ? 'region' : 'vector-path';
+  const layerId = editableGeometryLayerId(layerType);
+  if (!layerId)
+    throw new Error(`请先创建或解锁一个可编辑的${tool === 'region' ? '区域' : '路径'}图层。`);
+  const now = new Date().toISOString();
+  const center = {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+  const zIndex =
+    Math.max(
+      -1,
+      ...Object.values(useMapStore.getState().objectsById)
+        .filter((object) => object.layerId === layerId)
+        .map((object) => object.zIndex),
+    ) + 1;
+  const base = {
+    id: crypto.randomUUID(),
+    mapId: document.id,
+    layerId,
+    chunk: toChunkCoordinate(center, document.settings.chunkSize),
+    name: tool === 'region' ? '新区域' : tool === 'river' ? '新河流' : '新道路',
+    ...center,
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
+    zIndex,
+    visible: true,
+    locked: false,
+    opacity: 1,
+    metadata: {},
+    revision: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return mapObjectSchema.parse(
+    tool === 'region'
+      ? {
+          ...base,
+          type: 'region',
+          vertices: points,
+          fillToken: 'region.default.fill',
+          strokeToken: 'region.default.stroke',
+          strokeWidth: 3,
+        }
+      : {
+          ...base,
+          type: 'path',
+          pathKind: tool as PathKind,
+          nodes: points.map((anchor) => ({ anchor })),
+          styleToken: `path.${tool}`,
+          widthStart: tool === 'river' ? 14 : 8,
+          widthEnd: tool === 'river' ? 24 : 8,
+        },
+  ) as Extract<MapObject, { type: 'path' | 'region' }>;
 }
 
 function createStampObject(
@@ -167,6 +271,7 @@ export function PixiCanvas({
     let lastPointer: ScreenPoint | null = null;
     let pointerWorld: WorldPoint | null = null;
     let gesture: EditGesture | null = null;
+    let drawing: DrawingGesture | null = null;
     let telemetryCamera: CameraState = { x: 0, y: 0, zoom: 1 };
     let telemetryTimer = 0;
     const renderer = new MapRenderer(initialDocument);
@@ -276,9 +381,41 @@ export function PixiCanvas({
     };
     const cancelGesture = () => {
       gesture = null;
+      drawing = null;
       renderer.clearPreview();
+      renderer.previewGeometry(null);
       renderer.showMarquee(null);
       host.classList.remove('is-transforming');
+    };
+    const previewDrawing = () => {
+      if (!drawing) return renderer.previewGeometry(null);
+      const points = [...drawing.points, drawing.hover];
+      if ((drawing.tool === 'region' && points.length < 3) || points.length < 2) return;
+      try {
+        renderer.previewGeometry(createGeometryObject(initialDocument, drawing.tool, points));
+      } catch {
+        // Invalid intermediate polygons keep the last valid preview.
+      }
+    };
+    const commitDrawing = () => {
+      if (!drawing) return;
+      const finished = drawing;
+      drawing = null;
+      renderer.previewGeometry(null);
+      const minimum = finished.tool === 'region' ? 3 : 2;
+      if (finished.points.length < minimum) return;
+      try {
+        const object = createGeometryObject(initialDocument, finished.tool, finished.points);
+        const command =
+          object.type === 'path' ? new CreatePathCommand(object) : new CreateRegionCommand(object);
+        if (commandManager.execute(command)) {
+          useEditorStore.getState().setSelection([object.id]);
+          useEditorStore.getState().setTool('select');
+          onInteractionError?.(null);
+        }
+      } catch (error) {
+        reportError(error);
+      }
     };
 
     const onWheel = (event: WheelEvent) => {
@@ -311,6 +448,36 @@ export function PixiCanvas({
         placeStamp(world, assetRef.current);
         return;
       }
+      if (
+        toolRef.current === 'road' ||
+        toolRef.current === 'river' ||
+        toolRef.current === 'region'
+      ) {
+        event.preventDefault();
+        const point = clampToMap(initialDocument, world);
+        if (!drawing || drawing.tool !== toolRef.current) {
+          drawing = { tool: toolRef.current, points: [point], hover: point };
+          capture(event);
+          previewDrawing();
+          return;
+        }
+        const first = drawing.points[0]!;
+        const last = drawing.points.at(-1)!;
+        const tolerance = 10 / controller.getSnapshot().camera.zoom;
+        const closesRegion =
+          drawing.tool === 'region' &&
+          drawing.points.length >= 3 &&
+          Math.hypot(point.x - first.x, point.y - first.y) <= tolerance;
+        const doubleClick =
+          event.detail >= 2 && Math.hypot(point.x - last.x, point.y - last.y) <= tolerance;
+        if (closesRegion || doubleClick) {
+          commitDrawing();
+        } else {
+          drawing = { ...drawing, points: [...drawing.points, point], hover: point };
+          previewDrawing();
+        }
+        return;
+      }
       if (toolRef.current !== 'select') return;
 
       event.preventDefault();
@@ -318,6 +485,21 @@ export function PixiCanvas({
       const selectedObjects = selection
         .map((objectId) => useMapStore.getState().objectsById[objectId])
         .filter((object): object is MapObject => Boolean(object));
+      const geometryNode = renderer.hitSelectedGeometryNode(world);
+      if (geometryNode) {
+        const object = useMapStore.getState().objectsById[geometryNode.objectId];
+        if (object?.type === 'path' || object?.type === 'region') {
+          gesture = {
+            kind: 'geometry-node',
+            object,
+            nodeIndex: geometryNode.index,
+            candidate: null,
+          };
+          capture(event);
+          host.classList.add('is-transforming');
+          return;
+        }
+      }
       const handle = renderer.hitSelectionHandle(world);
       if (handle && selectedObjects.length > 0) {
         const bounds = selectionBounds(selectedObjects);
@@ -349,6 +531,7 @@ export function PixiCanvas({
             ? selection
             : [hit.id];
         useEditorStore.getState().setSelection(nextSelection);
+        if (hit.type === 'path' || hit.type === 'region') return;
         const originals = nextSelection
           .map((objectId) => useMapStore.getState().objectsById[objectId])
           .filter((object): object is MapObject => Boolean(object));
@@ -388,6 +571,31 @@ export function PixiCanvas({
         renderer.previewTransforms(gesture.changes);
       } else if (gesture?.kind === 'marquee') {
         renderer.showMarquee(rectFromPoints(gesture.start, world));
+      } else if (gesture?.kind === 'geometry-node') {
+        const nodeGesture = gesture;
+        const point = clampToMap(initialDocument, world);
+        const candidate =
+          nodeGesture.object.type === 'path'
+            ? {
+                ...nodeGesture.object,
+                nodes: nodeGesture.object.nodes.map((node, index) =>
+                  index === nodeGesture.nodeIndex ? { ...node, anchor: point } : node,
+                ),
+              }
+            : {
+                ...nodeGesture.object,
+                vertices: nodeGesture.object.vertices.map((vertex, index) =>
+                  index === nodeGesture.nodeIndex ? point : vertex,
+                ),
+              };
+        const parsed = mapObjectSchema.safeParse(candidate);
+        if (parsed.success && (parsed.data.type === 'path' || parsed.data.type === 'region')) {
+          nodeGesture.candidate = parsed.data;
+          renderer.previewGeometry(parsed.data);
+        }
+      } else if (drawing) {
+        drawing = { ...drawing, hover: clampToMap(initialDocument, world) };
+        previewDrawing();
       }
       lastPointer = point;
       pointerWorld = world;
@@ -408,6 +616,23 @@ export function PixiCanvas({
           if (finished.changes) {
             try {
               commandManager.execute(new TransformObjectsCommand(finished.changes));
+              onInteractionError?.(null);
+            } catch (error) {
+              reportError(error);
+            }
+          }
+        } else if (finished.kind === 'geometry-node') {
+          renderer.previewGeometry(null);
+          if (finished.candidate) {
+            try {
+              commandManager.execute(
+                finished.candidate.type === 'path'
+                  ? new UpdatePathGeometryCommand(finished.candidate.id, finished.candidate.nodes)
+                  : new UpdateRegionGeometryCommand(
+                      finished.candidate.id,
+                      finished.candidate.vertices,
+                    ),
+              );
               onInteractionError?.(null);
             } catch (error) {
               reportError(error);
@@ -441,7 +666,11 @@ export function PixiCanvas({
         host.classList.add('is-pan-ready');
         event.preventDefault();
       }
-      if (event.key === 'Escape' && gesture) {
+      if (event.key === 'Enter' && drawing) {
+        commitDrawing();
+        event.preventDefault();
+      }
+      if (event.key === 'Escape' && (gesture || drawing)) {
         cancelGesture();
         event.preventDefault();
       }
@@ -508,7 +737,7 @@ export function PixiCanvas({
 
   return (
     <div
-      className={`pixi-host ${tool === 'pan' ? 'is-pan-tool' : ''} ${tool === 'stamp' ? 'is-stamp-tool' : ''}`}
+      className={`pixi-host ${tool === 'pan' ? 'is-pan-tool' : ''} ${tool === 'stamp' ? 'is-stamp-tool' : ''} ${['road', 'river', 'region'].includes(tool) ? 'is-geometry-tool' : ''}`}
       ref={hostRef}
       data-testid="pixi-host"
     />
