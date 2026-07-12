@@ -150,6 +150,7 @@ model MapObject {
   map   Map      @relation(fields: [mapId], references: [id], onDelete: Cascade)
   layer MapLayer @relation(fields: [layerId], references: [id], onDelete: Restrict)
   chunk MapChunk @relation(fields: [chunkId], references: [id], onDelete: Restrict)
+  markerLocation Location? @relation("LocationMarker")
 
   @@index([mapId, chunkId, layerId])
   @@index([layerId, zIndex])
@@ -167,6 +168,7 @@ model Location {
   description  String?  @db.LongText
   regionId     String?  @db.Char(36)
   iconAssetId  String?  @db.Char(36)
+  markerObjectId String? @unique @db.Char(36)
   tags         Json
   customFields Json
   minZoom      Float?
@@ -174,9 +176,12 @@ model Location {
   createdAt    DateTime @default(now()) @db.DateTime(3)
   updatedAt    DateTime @updatedAt @db.DateTime(3)
 
-  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  map          Map        @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  iconAsset    Asset?     @relation("LocationIconAsset", fields: [iconAssetId], references: [id], onDelete: SetNull)
+  markerObject MapObject? @relation("LocationMarker", fields: [markerObjectId], references: [id], onDelete: SetNull)
 
   @@index([mapId, type])
+  @@index([mapId, name])
 }
 
 model AssetCategory {
@@ -207,13 +212,17 @@ model Asset {
   height        Int?
   sha256        String    @db.Char(64)
   metadata      Json
+  originalFileName String? @db.VarChar(255)
+  deletedAt     DateTime? @db.DateTime(3)
   createdAt     DateTime  @default(now()) @db.DateTime(3)
   updatedAt     DateTime  @updatedAt @db.DateTime(3)
 
   owner    User?          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   category AssetCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  locationIcons Location[] @relation("LocationIconAsset")
 
   @@index([ownerId, kind, createdAt])
+  @@index([ownerId, categoryId, createdAt])
   @@index([sha256])
 }
 

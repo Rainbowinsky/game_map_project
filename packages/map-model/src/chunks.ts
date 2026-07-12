@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { stampMapObjectSchema } from './objects.js';
+import { mapObjectSchema } from './objects.js';
 import {
   chunkCoordinateSchema,
   entityIdSchema,
@@ -29,7 +29,7 @@ export const mapChunkDescriptorSchema = z
 
 export const mapChunkPayloadSchema = mapChunkDescriptorSchema
   .extend({
-    objects: z.array(stampMapObjectSchema).max(50_000),
+    objects: z.array(mapObjectSchema).max(50_000),
   })
   .strict()
   .superRefine((payload, context) => {

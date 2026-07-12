@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { createStampMapObjectFixture, invalidStampMapObjectFixtures } from './fixtures.js';
-import { MAX_METADATA_BYTES, stampMapObjectSchema } from './objects.js';
+import {
+  createMarkerMapObjectFixture,
+  createPathMapObjectFixture,
+  createRegionMapObjectFixture,
+  createStampMapObjectFixture,
+  createTerrainStrokeMapObjectFixture,
+  createTextMapObjectFixture,
+  invalidP2ObjectFixtures,
+  invalidStampMapObjectFixtures,
+} from './fixtures.js';
+import { MAX_METADATA_BYTES, mapObjectSchema, stampMapObjectSchema } from './objects.js';
 
 describe('stampMapObjectSchema', () => {
   it('accepts the standalone stamp fixture', () => {
@@ -33,5 +42,26 @@ describe('stampMapObjectSchema', () => {
         metadata: { text: '界'.repeat(MAX_METADATA_BYTES) },
       }),
     ).toThrow(/Metadata/);
+  });
+
+  it.each(invalidP2ObjectFixtures)('rejects invalid P2 geometry and marker data', (fixture) => {
+    expect(() => mapObjectSchema.parse(fixture)).toThrow();
+  });
+
+  it('accepts a non-self-intersecting region', () => {
+    expect(mapObjectSchema.parse(createRegionMapObjectFixture())).toEqual(
+      createRegionMapObjectFixture(),
+    );
+  });
+
+  it.each([
+    createStampMapObjectFixture(),
+    createTerrainStrokeMapObjectFixture(),
+    createPathMapObjectFixture(),
+    createRegionMapObjectFixture(),
+    createTextMapObjectFixture(),
+    createMarkerMapObjectFixture(),
+  ])('accepts the %s object fixture', (fixture) => {
+    expect(mapObjectSchema.parse(fixture)).toEqual(fixture);
   });
 });

@@ -7,7 +7,13 @@ import {
   type Renderer,
   type Texture,
 } from 'pixi.js';
-import type { MapDocument, MapLayer, MapObject } from '@fantasy-map/map-model';
+import {
+  isStampMapObject,
+  type MapDocument,
+  type MapLayer,
+  type MapObject,
+  type StampMapObject,
+} from '@fantasy-map/map-model';
 
 import { getStampAsset } from '../assets/stamp-assets.js';
 import { drawMapArtwork } from '../renderer/map-artwork.js';
@@ -52,7 +58,7 @@ interface BlobCanvas {
   convertToBlob?(options?: { type?: string }): Promise<Blob>;
 }
 
-function applySpriteTransform(sprite: Sprite, object: MapObject): void {
+function applySpriteTransform(sprite: Sprite, object: StampMapObject): void {
   sprite.anchor.set(0.5);
   sprite.position.set(object.x, object.y);
   sprite.rotation = object.rotation;
@@ -110,7 +116,7 @@ export async function loadExportTextures(
 ): Promise<Map<string, Texture>> {
   const requested = new Map<string, string>();
   const missing = new Set<string>();
-  for (const object of objects) {
+  for (const object of objects.filter(isStampMapObject)) {
     const asset = getStampAsset(object.assetId);
     if (asset) requested.set(asset.id, asset.url);
     else missing.add(object.assetId);
@@ -152,7 +158,8 @@ export async function exportMapToPng({
   const plan = createPngExportPlan(document.width, document.height, requestedLongEdge, constraints);
   const visibleLayerIds = effectivelyVisibleLayerIds(layers);
   const exportObjects = objects.filter(
-    (object) => object.visible && visibleLayerIds.has(object.layerId),
+    (object): object is StampMapObject =>
+      isStampMapObject(object) && object.visible && visibleLayerIds.has(object.layerId),
   );
   const textures = await loadExportTextures(exportObjects);
   const scene = new Container();

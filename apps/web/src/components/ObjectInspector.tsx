@@ -54,7 +54,7 @@ export function ObjectInspector({ commandManager }: ObjectInspectorProps) {
     <div className="object-properties">
       <p className="kicker">SELECTION</p>
       <h3>{objects.length === 1 ? (object?.name ?? '未命名图章') : `${objects.length} 个图章`}</h3>
-      <p>{objects.length === 1 ? object?.stampKind.toUpperCase() : 'MULTI-SELECTION'}</p>
+      <p>{objects.length === 1 ? object?.type.toUpperCase() : 'MULTI-SELECTION'}</p>
       {object && (
         <div className="object-fields">
           {(

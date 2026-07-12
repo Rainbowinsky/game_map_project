@@ -70,4 +70,17 @@ describe('operation schemas', () => {
       }),
     ).toThrow();
   });
+
+  it('limits the serialized operation payload', () => {
+    expect(() =>
+      applyOperationsRequestSchema.parse({
+        ...createApplyOperationsRequestFixture(),
+        operations: Array.from({ length: 200 }, () => ({
+          type: 'object.update' as const,
+          objectId: FIXTURE_IDS.object,
+          changes: { metadata: { text: 'x'.repeat(12_000) } },
+        })),
+      }),
+    ).toThrow(/Operation batch/);
+  });
 });

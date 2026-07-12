@@ -43,6 +43,10 @@ function commandForOperation(operation: MapOperation, timestamp: string): Editor
       return new DeleteObjectCommand(operation.objectId);
     case 'object.reorder':
       throw new Error('Object reorder recovery is not supported by this editor version.');
+    case 'location.create':
+    case 'location.update':
+    case 'location.delete':
+      throw new Error('Location recovery is not supported by this editor version.');
     case 'layer.create': {
       const layer: MapLayer = {
         ...operation.layer,

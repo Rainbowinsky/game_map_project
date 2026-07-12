@@ -10,9 +10,9 @@ import {
   type MapLayer,
   type MapLayerInput,
   type MapObject,
+  type MapObjectInput,
   type MapOperation,
   type ObjectChanges,
-  type StampMapObjectInput,
 } from '@fantasy-map/map-model';
 
 import type {
@@ -43,7 +43,7 @@ const OBJECT_CHANGE_KEYS = [
   'flipX',
   'flipY',
   'randomSeed',
-] as const satisfies readonly (keyof ObjectChanges)[];
+] as const;
 
 const LAYER_CHANGE_KEYS = [
   'parentId',
@@ -60,11 +60,11 @@ function estimate(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
-function objectInput(object: MapObject): StampMapObjectInput {
+function objectInput(object: MapObject): MapObjectInput {
   const omitted = new Set(['mapId', 'chunk', 'revision', 'createdAt', 'updatedAt']);
   return Object.fromEntries(
     Object.entries(object).filter(([key]) => !omitted.has(key)),
-  ) as StampMapObjectInput;
+  ) as MapObjectInput;
 }
 
 function layerInput(layer: MapLayer): MapLayerInput {
@@ -81,16 +81,20 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 function changedObjectFields(before: MapObject, after: MapObject): ObjectChanges {
   const changes: Partial<ObjectChanges> = {};
+  const beforeValues = before as unknown as Record<string, unknown>;
+  const afterValues = after as unknown as Record<string, unknown>;
   for (const key of OBJECT_CHANGE_KEYS) {
-    if (!sameValue(before[key], after[key])) {
-      Object.assign(changes, { [key]: after[key] });
+    if (!sameValue(beforeValues[key], afterValues[key])) {
+      Object.assign(changes, { [key]: afterValues[key] });
     }
   }
   return objectChangesSchema.parse(changes);
 }
 
 function hasChangedObjectFields(before: MapObject, after: MapObject): boolean {
-  return OBJECT_CHANGE_KEYS.some((key) => !sameValue(before[key], after[key]));
+  const beforeValues = before as unknown as Record<string, unknown>;
+  const afterValues = after as unknown as Record<string, unknown>;
+  return OBJECT_CHANGE_KEYS.some((key) => !sameValue(beforeValues[key], afterValues[key]));
 }
 
 function changedLayerFields(before: MapLayer, after: MapLayer): LayerChanges {

@@ -1,7 +1,12 @@
 import type { Brand } from '@fantasy-map/shared';
 import { z } from 'zod';
 
-export const MAP_MODEL_SCHEMA_VERSION = 1 as const;
+/**
+ * Version 2 introduces the typed drawing-object and location contracts.
+ * Version 1 documents are upgraded through `migrateMapDocument` before they
+ * are exposed to clients.
+ */
+export const MAP_MODEL_SCHEMA_VERSION = 2 as const;
 export const MAX_ABS_WORLD_COORDINATE = 1_000_000_000;
 export const MAX_WORLD_EXTENT = 2_000_000_000;
 export const MIN_OBJECT_SCALE = 0.001;

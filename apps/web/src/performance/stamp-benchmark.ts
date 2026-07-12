@@ -1,4 +1,4 @@
-import type { MapObject } from '@fantasy-map/map-model';
+import type { StampMapObject } from '@fantasy-map/map-model';
 
 export const STAMP_BENCHMARK_COUNTS = [2_000, 5_000] as const;
 
@@ -29,7 +29,7 @@ function benchmarkId(index: number): string {
 export function createStampBenchmarkObjects(
   count: number,
   options: StampBenchmarkOptions = {},
-): MapObject[] {
+): StampMapObject[] {
   if (!Number.isSafeInteger(count) || count < 1 || count > 50_000) {
     throw new RangeError('Benchmark stamp count must be an integer between 1 and 50,000.');
   }

@@ -1,5 +1,11 @@
 import { Sprite, Texture, type Container } from 'pixi.js';
-import type { MapObject, ObjectTransform, WorldRect } from '@fantasy-map/map-model';
+import {
+  isStampMapObject,
+  type MapObject,
+  type ObjectTransform,
+  type StampMapObject,
+  type WorldRect,
+} from '@fantasy-map/map-model';
 
 import { objectBounds, rectsIntersect } from '../editor/selection/geometry.js';
 import type { AssetRegistry, TextureLease } from './AssetRegistry.js';
@@ -8,14 +14,14 @@ import type { RendererProjection } from './RendererProjection.js';
 interface ObjectView {
   readonly sprite: Sprite;
   readonly lease: TextureLease;
-  object: MapObject;
+  object: StampMapObject;
   disposed: boolean;
 }
 
 function applyTransform(
   sprite: Sprite,
   object: MapObject | ObjectTransform,
-  source?: MapObject,
+  source?: StampMapObject,
 ): void {
   sprite.position.set(object.x, object.y);
   sprite.rotation = object.rotation;
@@ -27,7 +33,7 @@ function applyTransform(
 /** Incrementally projects normalized stamp objects into their layer containers. */
 export class ObjectProjection {
   private readonly views = new Map<string, ObjectView>();
-  private objects = new Map<string, MapObject>();
+  private objects = new Map<string, StampMapObject>();
   private visibleRect: WorldRect | null = null;
 
   constructor(
@@ -40,14 +46,19 @@ export class ObjectProjection {
     for (const [objectId, view] of this.views) {
       if (!ids.has(objectId)) this.remove(objectId, view);
     }
-    this.objects = new Map(objects.map((object) => [object.id, object]));
+    const stamps = objects.filter(isStampMapObject);
+    this.objects = new Map(stamps.map((object) => [object.id, object]));
     const sortTargets = new Set<Container>();
-    for (const object of objects) this.upsertInto(object, sortTargets);
+    for (const object of stamps) this.upsertInto(object, sortTargets);
     this.sort(sortTargets);
   }
 
   /** Applies one committed object patch without rebuilding the full scene. */
   upsert(object: MapObject): void {
+    if (!isStampMapObject(object)) {
+      this.removeObject(object.id);
+      return;
+    }
     this.objects.set(object.id, object);
     const sortTargets = new Set<Container>();
     this.upsertInto(object, sortTargets);
@@ -98,7 +109,7 @@ export class ObjectProjection {
     this.objects.clear();
   }
 
-  private create(object: MapObject): ObjectView {
+  private create(object: StampMapObject): ObjectView {
     const lease = this.assets.acquire(object.assetId);
     const sprite = new Sprite(Texture.EMPTY);
     sprite.anchor.set(0.5);
@@ -118,7 +129,7 @@ export class ObjectProjection {
     return view;
   }
 
-  private upsertInto(object: MapObject, sortTargets: Set<Container>): void {
+  private upsertInto(object: StampMapObject, sortTargets: Set<Container>): void {
     let view = this.views.get(object.id);
     if (!view || view.object.assetId !== object.assetId) {
       if (view) this.remove(object.id, view);
@@ -158,7 +169,7 @@ export class ObjectProjection {
     this.views.delete(objectId);
   }
 
-  private isInVisibleRect(object: MapObject): boolean {
+  private isInVisibleRect(object: StampMapObject): boolean {
     return this.visibleRect === null || rectsIntersect(this.visibleRect, objectBounds(object));
   }
 }

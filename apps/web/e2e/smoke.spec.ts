@@ -23,7 +23,7 @@ const session = {
   expiresIn: 900,
 };
 const mapDocument = (id = ids.map, name = '灰烬海岸', revision = 0) => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   id,
   projectId: ids.project,
   name,

@@ -2,13 +2,19 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   applyOperationsResponseSchema,
   chunkKey,
+  locationSchema,
   mapChunkDescriptorSchema,
   mapChunkPayloadSchema,
-  mapDocumentSchema,
+  mapObjectSchema,
+  migrateMapDocument,
+  objectChangesForType,
   toChunkCoordinate,
+  type Location,
   type ApplyOperationsRequest,
   type ApplyOperationsResponse,
+  type MapObject,
   type MapOperation,
+  MAP_MODEL_SCHEMA_VERSION,
 } from '@fantasy-map/map-model';
 import type {
   CreateMapRequest,
@@ -38,10 +44,30 @@ interface LayerState {
   updatedAt: Date;
 }
 
+interface LocationState {
+  id: string;
+  mapId: string;
+  name: string;
+  type: string;
+  x: number;
+  y: number;
+  summary: string | null;
+  description: string | null;
+  regionId: string | null;
+  iconAssetId: string | null;
+  markerObjectId: string | null;
+  tags: Prisma.JsonValue;
+  customFields: Prisma.JsonObject;
+  minZoom: number | null;
+  maxZoom: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 interface ObjectState {
   id: string;
   layerId: string;
-  type: string;
+  type: MapObject['type'];
   name: string | null;
   x: number;
   y: number;
@@ -163,6 +189,7 @@ export class MapsService {
       await tx.mapDocument.create({
         data: {
           mapId: created.id,
+          schemaVersion: MAP_MODEL_SCHEMA_VERSION,
           width: input.width,
           height: input.height,
           themeId: input.themeId,
@@ -185,21 +212,24 @@ export class MapsService {
       include: { document: true, layers: { orderBy: [{ parentId: 'asc' }, { sortOrder: 'asc' }] } },
     });
     if (!map.document) reject('Map document is missing.');
-    return mapDocumentSchema.parse({
-      schemaVersion: 1,
-      id: map.id,
-      projectId: map.projectId,
-      name: map.name,
-      width: map.document.width,
-      height: map.document.height,
-      themeId: map.document.themeId,
-      background: map.document.background,
-      settings: map.document.settings,
-      revision: map.document.revision,
-      createdAt: map.createdAt.toISOString(),
-      updatedAt: map.updatedAt.toISOString(),
-      layers: map.layers.map((layer) => this.layerResponse(map.id, layer)),
-    });
+    return migrateMapDocument(
+      {
+        schemaVersion: map.document.schemaVersion,
+        id: map.id,
+        projectId: map.projectId,
+        name: map.name,
+        width: map.document.width,
+        height: map.document.height,
+        themeId: map.document.themeId,
+        background: map.document.background,
+        settings: map.document.settings,
+        revision: map.document.revision,
+        createdAt: map.createdAt.toISOString(),
+        updatedAt: map.updatedAt.toISOString(),
+        layers: map.layers.map((layer) => this.layerResponse(map.id, layer)),
+      },
+      map.document.schemaVersion,
+    );
   }
 
   async listChunks(actorId: string, mapId: string, query: PaginationQuery) {
@@ -227,6 +257,7 @@ export class MapsService {
       objects: chunk.objects.map((object) =>
         this.objectResponse(mapId, chunk.x, chunk.y, {
           ...object,
+          type: object.type as MapObject['type'],
           payload: object.payload as Record<string, unknown>,
           metadata: object.metadata as Prisma.JsonObject,
         }),
@@ -264,7 +295,7 @@ export class MapsService {
   ): Promise<ApplyOperationsResponse> {
     const map = await tx.map.findFirst({
       where: { id: mapId, project: { ownerId: actorId } },
-      include: { document: true, layers: true, objects: true, chunks: true },
+      include: { document: true, layers: true, objects: true, locations: true, chunks: true },
     });
     if (!map || !map.document)
       throw new AppError('RESOURCE_NOT_FOUND', 'Resource was not found.', 404);
@@ -284,14 +315,28 @@ export class MapsService {
         object.id,
         {
           ...object,
+          type: object.type as MapObject['type'],
           payload: object.payload as Record<string, unknown>,
           metadata: object.metadata as Prisma.JsonObject,
+        },
+      ]),
+    );
+    const locations = new Map<string, LocationState>(
+      map.locations.map((location) => [
+        location.id,
+        {
+          ...location,
+          tags: location.tags as Prisma.JsonValue,
+          customFields: location.customFields as Prisma.JsonObject,
         },
       ]),
     );
     const newObjectIds = new Set<string>();
     const dirtyObjectIds = new Set<string>();
     const deletedObjectIds = new Set<string>();
+    const newLocationIds = new Set<string>();
+    const dirtyLocationIds = new Set<string>();
+    const deletedLocationIds = new Set<string>();
     const changedChunkKeys = new Set<string>();
     const chunkSize = this.getChunkSize(map.document.settings);
 
@@ -303,14 +348,29 @@ export class MapsService {
         operation,
         layers,
         objects,
+        locations,
         newObjectIds,
         dirtyObjectIds,
         deletedObjectIds,
+        newLocationIds,
+        dirtyLocationIds,
+        deletedLocationIds,
         changedChunkKeys,
         chunkSize,
+        { width: map.document.width, height: map.document.height },
       );
     }
     this.validateLayers(layers);
+    await this.validateReferences(
+      tx,
+      actorId,
+      mapId,
+      objects,
+      locations,
+      dirtyLocationIds,
+      chunkSize,
+      { width: map.document.width, height: map.document.height },
+    );
 
     const objectsByChunk = new Map<string, ObjectState[]>();
     for (const object of objects.values()) {
@@ -351,6 +411,28 @@ export class MapsService {
       if (current) changedChunkKeys.add(key);
     }
 
+    // A batch may create a typed layer and its first object together. Create
+    // those parent rows before persisting MapObject foreign keys; deletions are
+    // still delayed until after object moves/deletions below.
+    const existingLayerIds = new Set(map.layers.map((layer) => layer.id));
+    for (const layer of layers.values()) {
+      if (existingLayerIds.has(layer.id)) continue;
+      await tx.mapLayer.create({
+        data: {
+          id: layer.id,
+          mapId,
+          parentId: layer.parentId,
+          name: layer.name,
+          type: layer.type,
+          sortOrder: layer.sortOrder,
+          visible: layer.visible,
+          locked: layer.locked,
+          opacity: layer.opacity,
+          blendMode: layer.blendMode,
+        },
+      });
+    }
+
     for (const id of deletedObjectIds) await tx.mapObject.delete({ where: { id } });
     for (const id of dirtyObjectIds) {
       const object = objects.get(id);
@@ -361,6 +443,15 @@ export class MapsService {
       const data = this.objectPersistenceData(object, chunkId);
       if (newObjectIds.has(id)) await tx.mapObject.create({ data: { id, mapId, ...data } });
       else await tx.mapObject.update({ where: { id }, data });
+    }
+
+    for (const id of deletedLocationIds) await tx.location.delete({ where: { id } });
+    for (const id of dirtyLocationIds) {
+      const location = locations.get(id);
+      if (!location) continue;
+      const data = this.locationPersistenceData(location);
+      if (newLocationIds.has(id)) await tx.location.create({ data });
+      else await tx.location.update({ where: { id }, data });
     }
 
     await tx.mapLayer.deleteMany({ where: { mapId, id: { notIn: [...layers.keys()] } } });
@@ -375,14 +466,19 @@ export class MapsService {
         opacity: layer.opacity,
         blendMode: layer.blendMode,
       };
-      if (map.layers.some((existing) => existing.id === layer.id))
+      if (existingLayerIds.has(layer.id))
         await tx.mapLayer.update({ where: { id: layer.id }, data });
-      else await tx.mapLayer.create({ data: { id: layer.id, mapId, ...data } });
     }
 
     const updatedDocument = await tx.mapDocument.update({
       where: { mapId },
-      data: { revision: { increment: 1 } },
+      data: {
+        revision: { increment: 1 },
+        ...([...objects.values()].some((object) => object.type !== 'stamp') ||
+        input.operations.some((operation) => operation.type.startsWith('location.'))
+          ? { schemaVersion: MAP_MODEL_SCHEMA_VERSION }
+          : {}),
+      },
       select: { revision: true, updatedAt: true },
     });
     const response = applyOperationsResponseSchema.parse({
@@ -412,46 +508,30 @@ export class MapsService {
     operation: MapOperation,
     layers: Map<string, LayerState>,
     objects: Map<string, ObjectState>,
+    locations: Map<string, LocationState>,
     newObjectIds: Set<string>,
     dirtyObjectIds: Set<string>,
     deletedObjectIds: Set<string>,
+    newLocationIds: Set<string>,
+    dirtyLocationIds: Set<string>,
+    deletedLocationIds: Set<string>,
     changedChunkKeys: Set<string>,
     chunkSize: number,
+    mapBounds: { readonly width: number; readonly height: number },
   ): Promise<void> {
     switch (operation.type) {
       case 'object.create': {
         if (objects.has(operation.object.id)) reject('Object ID already exists.');
         const layer = this.requireLayer(layers, operation.object.layerId);
-        if (layer.locked || layer.type !== 'stamp')
-          reject('Objects can only be created on an unlocked stamp layer.');
-        await this.requireAsset(tx, actorId, operation.object.assetId);
-        const object: ObjectState = {
-          id: operation.object.id,
-          layerId: operation.object.layerId,
-          type: operation.object.type,
-          name: operation.object.name,
-          x: operation.object.x,
-          y: operation.object.y,
-          rotation: operation.object.rotation,
-          scaleX: operation.object.scaleX,
-          scaleY: operation.object.scaleY,
-          zIndex: operation.object.zIndex,
-          visible: operation.object.visible,
-          locked: operation.object.locked,
-          opacity: operation.object.opacity,
-          payload: {
-            assetId: operation.object.assetId,
-            stampKind: operation.object.stampKind,
-            tint: operation.object.tint,
-            flipX: operation.object.flipX,
-            flipY: operation.object.flipY,
-            randomSeed: operation.object.randomSeed,
-          },
-          metadata: operation.object.metadata as Prisma.JsonObject,
-          revision: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
+        if (layer.locked || layer.type !== this.layerTypeForObject(operation.object.type))
+          reject('Objects can only be created on their matching unlocked layer type.');
+        const object = this.objectStateFromInput(mapId, operation.object, chunkSize);
+        this.assertObjectWithinMap(this.objectModelFromState(mapId, chunkSize, object), mapBounds);
+        await this.requireObjectAssets(
+          tx,
+          actorId,
+          this.objectModelFromState(mapId, chunkSize, object),
+        );
         objects.set(object.id, object);
         newObjectIds.add(object.id);
         dirtyObjectIds.add(object.id);
@@ -463,19 +543,26 @@ export class MapsService {
         const previousKey = chunkKey(toChunkCoordinate({ x: object.x, y: object.y }, chunkSize));
         const currentLayer = this.requireLayer(layers, object.layerId);
         if (currentLayer.locked || object.locked) reject('Locked objects cannot be changed.');
-        if (operation.changes.layerId) {
-          const targetLayer = this.requireLayer(layers, operation.changes.layerId);
-          if (targetLayer.locked || targetLayer.type !== 'stamp')
-            reject('Objects can only move to an unlocked stamp layer.');
+        const current = this.objectModelFromState(mapId, chunkSize, object);
+        const changes = objectChangesForType(current.type, operation.changes);
+        if (changes.layerId) {
+          const targetLayer = this.requireLayer(layers, changes.layerId);
+          if (targetLayer.locked || targetLayer.type !== this.layerTypeForObject(current.type))
+            reject('Objects can only move to an unlocked matching layer type.');
         }
-        if (operation.changes.assetId)
-          await this.requireAsset(tx, actorId, operation.changes.assetId);
-        Object.assign(object, operation.changes);
-        if (operation.changes.assetId !== undefined)
-          object.payload.assetId = operation.changes.assetId;
-        for (const key of ['stampKind', 'tint', 'flipX', 'flipY', 'randomSeed'] as const)
-          if (operation.changes[key] !== undefined) object.payload[key] = operation.changes[key];
-        object.revision += 1;
+        const next = mapObjectSchema.parse({
+          ...current,
+          ...changes,
+          chunk: toChunkCoordinate(
+            { x: changes.x ?? current.x, y: changes.y ?? current.y },
+            chunkSize,
+          ),
+          revision: current.revision + 1,
+          updatedAt: new Date().toISOString(),
+        });
+        this.assertObjectWithinMap(next, mapBounds);
+        await this.requireObjectAssets(tx, actorId, next);
+        Object.assign(object, this.objectStateFromModel(next));
         dirtyObjectIds.add(object.id);
         changedChunkKeys.add(previousKey);
         changedChunkKeys.add(chunkKey(toChunkCoordinate({ x: object.x, y: object.y }, chunkSize)));
@@ -511,6 +598,34 @@ export class MapsService {
             chunkKey(toChunkCoordinate({ x: object.x, y: object.y }, chunkSize)),
           );
         });
+        return;
+      }
+      case 'location.create': {
+        if (locations.has(operation.location.id)) reject('Location ID already exists.');
+        const location = this.locationStateFromInput(mapId, operation.location);
+        this.assertLocationWithinMap(this.locationModelFromState(location), mapBounds);
+        if (location.iconAssetId) await this.requireAsset(tx, actorId, location.iconAssetId);
+        locations.set(location.id, location);
+        newLocationIds.add(location.id);
+        dirtyLocationIds.add(location.id);
+        return;
+      }
+      case 'location.update': {
+        const location = this.requireLocation(locations, operation.locationId);
+        const nextState: LocationState = { ...location, updatedAt: new Date() };
+        Object.assign(nextState, operation.changes);
+        const next = this.locationModelFromState(nextState);
+        this.assertLocationWithinMap(next, mapBounds);
+        if (next.iconAssetId) await this.requireAsset(tx, actorId, next.iconAssetId);
+        Object.assign(location, this.locationStateFromModel(next));
+        dirtyLocationIds.add(location.id);
+        return;
+      }
+      case 'location.delete': {
+        const location = this.requireLocation(locations, operation.locationId);
+        locations.delete(location.id);
+        dirtyLocationIds.delete(location.id);
+        deletedLocationIds.add(location.id);
         return;
       }
       case 'layer.create': {
@@ -584,8 +699,12 @@ export class MapsService {
         const ownedObjects = [...objects.values()].filter((object) => object.layerId === layer.id);
         if (operation.objectPolicy === 'move') {
           const target = this.requireLayer(layers, operation.targetLayerId ?? '');
-          if (target.id === layer.id || target.type !== 'stamp' || target.locked)
-            reject('Objects must move to a different unlocked stamp layer.');
+          if (
+            target.id === layer.id ||
+            target.locked ||
+            ownedObjects.some((object) => target.type !== this.layerTypeForObject(object.type))
+          )
+            reject('Objects must move to a different unlocked matching layer type.');
           for (const object of ownedObjects) {
             object.layerId = target.id;
             object.revision += 1;
@@ -650,6 +769,229 @@ export class MapsService {
     if (!object) reject('Object does not belong to this map.');
     return object;
   }
+  private requireLocation(locations: Map<string, LocationState>, id: string): LocationState {
+    const location = locations.get(id);
+    if (!location) reject('Location does not belong to this map.');
+    return location;
+  }
+  private layerTypeForObject(type: MapObject['type']): string {
+    switch (type) {
+      case 'stamp':
+        return 'stamp';
+      case 'terrain-stroke':
+        return 'raster';
+      case 'path':
+        return 'vector-path';
+      case 'region':
+        return 'region';
+      case 'text':
+        return 'text';
+      case 'marker':
+        return 'marker';
+    }
+  }
+  private objectStateFromInput(
+    mapId: string,
+    input: Extract<MapOperation, { type: 'object.create' }>['object'],
+    chunkSize: number,
+  ): ObjectState {
+    const timestamp = new Date().toISOString();
+    return this.objectStateFromModel(
+      mapObjectSchema.parse({
+        ...input,
+        mapId,
+        chunk: toChunkCoordinate({ x: input.x, y: input.y }, chunkSize),
+        revision: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+  }
+  private objectStateFromModel(object: MapObject): ObjectState {
+    const persistenceFields = new Set([
+      'id',
+      'mapId',
+      'layerId',
+      'chunk',
+      'type',
+      'name',
+      'x',
+      'y',
+      'rotation',
+      'scaleX',
+      'scaleY',
+      'zIndex',
+      'visible',
+      'locked',
+      'opacity',
+      'metadata',
+      'revision',
+      'createdAt',
+      'updatedAt',
+    ]);
+    const payload = Object.fromEntries(
+      Object.entries(object).filter(([key]) => !persistenceFields.has(key)),
+    ) as Record<string, unknown>;
+    return {
+      id: object.id,
+      layerId: object.layerId,
+      type: object.type,
+      name: object.name,
+      x: object.x,
+      y: object.y,
+      rotation: object.rotation,
+      scaleX: object.scaleX,
+      scaleY: object.scaleY,
+      zIndex: object.zIndex,
+      visible: object.visible,
+      locked: object.locked,
+      opacity: object.opacity,
+      payload,
+      metadata: object.metadata as Prisma.JsonObject,
+      revision: object.revision,
+      createdAt: new Date(object.createdAt),
+      updatedAt: new Date(object.updatedAt),
+    };
+  }
+  private objectModelFromState(mapId: string, chunkSize: number, object: ObjectState): MapObject {
+    return mapObjectSchema.parse({
+      ...object.payload,
+      id: object.id,
+      mapId,
+      layerId: object.layerId,
+      chunk: toChunkCoordinate({ x: object.x, y: object.y }, chunkSize),
+      type: object.type,
+      name: object.name,
+      x: object.x,
+      y: object.y,
+      rotation: object.rotation,
+      scaleX: object.scaleX,
+      scaleY: object.scaleY,
+      zIndex: object.zIndex,
+      visible: object.visible,
+      locked: object.locked,
+      opacity: object.opacity,
+      metadata: object.metadata,
+      revision: object.revision,
+      createdAt: object.createdAt.toISOString(),
+      updatedAt: object.updatedAt.toISOString(),
+    });
+  }
+  private locationStateFromInput(
+    mapId: string,
+    input: Extract<MapOperation, { type: 'location.create' }>['location'],
+  ): LocationState {
+    const timestamp = new Date().toISOString();
+    return this.locationStateFromModel(
+      locationSchema.parse({
+        ...input,
+        mapId,
+        markerObjectId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+  }
+  private locationStateFromModel(location: Location): LocationState {
+    return {
+      ...location,
+      tags: location.tags as Prisma.JsonValue,
+      customFields: location.customFields as Prisma.JsonObject,
+      createdAt: new Date(location.createdAt),
+      updatedAt: new Date(location.updatedAt),
+    };
+  }
+  private locationModelFromState(location: LocationState): Location {
+    return locationSchema.parse({
+      ...location,
+      tags: location.tags,
+      customFields: location.customFields,
+      createdAt: location.createdAt.toISOString(),
+      updatedAt: location.updatedAt.toISOString(),
+    });
+  }
+  private assertPointWithinMap(
+    point: { readonly x: number; readonly y: number },
+    mapBounds: { readonly width: number; readonly height: number },
+    label: string,
+  ): void {
+    if (point.x < 0 || point.x > mapBounds.width || point.y < 0 || point.y > mapBounds.height) {
+      reject(`${label} must lie within the map bounds.`);
+    }
+  }
+  private assertObjectWithinMap(
+    object: MapObject,
+    mapBounds: { readonly width: number; readonly height: number },
+  ): void {
+    if (object.type === 'stamp') return;
+    this.assertPointWithinMap(object, mapBounds, 'Object anchor');
+    if (object.type === 'terrain-stroke') {
+      object.points.forEach((point) =>
+        this.assertPointWithinMap(point, mapBounds, 'Terrain point'),
+      );
+    } else if (object.type === 'path') {
+      object.nodes.forEach((node) =>
+        this.assertPointWithinMap(node.anchor, mapBounds, 'Path anchor'),
+      );
+    } else if (object.type === 'region') {
+      object.vertices.forEach((point) =>
+        this.assertPointWithinMap(point, mapBounds, 'Region vertex'),
+      );
+    }
+  }
+  private assertLocationWithinMap(
+    location: Location,
+    mapBounds: { readonly width: number; readonly height: number },
+  ): void {
+    this.assertPointWithinMap(location, mapBounds, 'Location');
+  }
+  private async requireObjectAssets(
+    tx: Transaction,
+    actorId: string,
+    object: MapObject,
+  ): Promise<void> {
+    if (object.type === 'stamp') await this.requireAsset(tx, actorId, object.assetId);
+    if (object.type === 'marker' && object.iconAssetId)
+      await this.requireAsset(tx, actorId, object.iconAssetId);
+  }
+  private async validateReferences(
+    tx: Transaction,
+    actorId: string,
+    mapId: string,
+    objects: Map<string, ObjectState>,
+    locations: Map<string, LocationState>,
+    dirtyLocationIds: Set<string>,
+    chunkSize: number,
+    mapBounds: { readonly width: number; readonly height: number },
+  ): Promise<void> {
+    const markersByLocation = new Map<string, string>();
+    for (const object of objects.values()) {
+      const model = this.objectModelFromState(mapId, chunkSize, object);
+      this.assertObjectWithinMap(model, mapBounds);
+      await this.requireObjectAssets(tx, actorId, model);
+      if (model.type !== 'marker') continue;
+      if (!locations.has(model.locationId)) reject('Marker location must belong to the same map.');
+      if (markersByLocation.has(model.locationId))
+        reject('A location can have at most one primary marker.');
+      markersByLocation.set(model.locationId, model.id);
+    }
+    for (const location of locations.values()) {
+      const model = this.locationModelFromState(location);
+      this.assertLocationWithinMap(model, mapBounds);
+      if (model.iconAssetId) await this.requireAsset(tx, actorId, model.iconAssetId);
+      if (model.regionId) {
+        const region = objects.get(model.regionId);
+        if (!region || region.type !== 'region')
+          reject('Location region must belong to the same map.');
+      }
+      const markerObjectId = markersByLocation.get(model.id) ?? null;
+      if (location.markerObjectId !== markerObjectId) {
+        location.markerObjectId = markerObjectId;
+        location.updatedAt = new Date();
+        dirtyLocationIds.add(location.id);
+      }
+    }
+  }
   private layerSiblings(layers: Map<string, LayerState>, parentId: string | null): LayerState[] {
     return [...layers.values()]
       .filter((layer) => layer.parentId === parentId)
@@ -681,7 +1023,7 @@ export class MapsService {
 
   private async requireAsset(tx: Transaction, actorId: string, assetId: string): Promise<void> {
     const asset = await tx.asset.findFirst({
-      where: { id: assetId, OR: [{ ownerId: actorId }, { ownerId: null }] },
+      where: { id: assetId, deletedAt: null, OR: [{ ownerId: actorId }, { ownerId: null }] },
       select: { id: true },
     });
     if (!asset) throw new AppError('RESOURCE_NOT_FOUND', 'Resource was not found.', 404);
@@ -734,13 +1076,13 @@ export class MapsService {
     });
   }
   private objectResponse(mapId: string, x: number, y: number, object: ObjectState) {
-    const payload = object.payload;
-    return {
+    return mapObjectSchema.parse({
+      ...object.payload,
       id: object.id,
       mapId,
       layerId: object.layerId,
       chunk: { x, y },
-      type: 'stamp',
+      type: object.type,
       name: object.name,
       x: object.x,
       y: object.y,
@@ -753,15 +1095,9 @@ export class MapsService {
       opacity: object.opacity,
       metadata: object.metadata,
       revision: object.revision,
-      assetId: payload.assetId,
-      stampKind: payload.stampKind,
-      tint: payload.tint ?? null,
-      flipX: payload.flipX ?? false,
-      flipY: payload.flipY ?? false,
-      randomSeed: payload.randomSeed,
       createdAt: object.createdAt.toISOString(),
       updatedAt: object.updatedAt.toISOString(),
-    };
+    });
   }
   private objectPersistenceData(object: ObjectState, chunkId: string) {
     return {
@@ -781,6 +1117,25 @@ export class MapsService {
       payload: object.payload as Prisma.InputJsonValue,
       metadata: object.metadata as Prisma.InputJsonValue,
       revision: object.revision,
+    };
+  }
+  private locationPersistenceData(location: LocationState) {
+    return {
+      id: location.id,
+      mapId: location.mapId,
+      name: location.name,
+      type: location.type,
+      x: location.x,
+      y: location.y,
+      summary: location.summary,
+      description: location.description,
+      regionId: location.regionId,
+      iconAssetId: location.iconAssetId,
+      markerObjectId: location.markerObjectId,
+      tags: location.tags as Prisma.InputJsonValue,
+      customFields: location.customFields as Prisma.InputJsonValue,
+      minZoom: location.minZoom,
+      maxZoom: location.maxZoom,
     };
   }
   private projectResponse(

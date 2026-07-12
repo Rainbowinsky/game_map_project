@@ -17,7 +17,7 @@ const timestamp = '2026-07-12T00:00:00.000Z';
 
 function document() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: ids.map,
     projectId: ids.project,
     name: 'Projection benchmark',

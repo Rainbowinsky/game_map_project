@@ -15,6 +15,17 @@ export class UnsupportedMapDocumentVersionError extends Error {
 
 const migrationRegistry = new Map<number, MapDocumentMigration>();
 
+/**
+ * P2 keeps the v1 document shape intact. The contract change is explicit so
+ * persisted v1 maps are never rewritten merely by being loaded.
+ */
+migrationRegistry.set(1, (input) => {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new UnsupportedMapDocumentVersionError(1);
+  }
+  return { ...(input as Record<string, unknown>), schemaVersion: 2 };
+});
+
 export const mapDocumentMigrationRegistry: ReadonlyMap<number, MapDocumentMigration> =
   migrationRegistry;
 

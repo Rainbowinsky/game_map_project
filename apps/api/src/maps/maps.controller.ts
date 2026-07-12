@@ -11,7 +11,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import type { ApplyOperationsRequest } from '@fantasy-map/map-model';
+import { MAP_MODEL_SCHEMA_VERSION, type ApplyOperationsRequest } from '@fantasy-map/map-model';
 import {
   createMapRequestSchema,
   createProjectRequestSchema,
@@ -24,6 +24,7 @@ import {
 } from '@fantasy-map/validation';
 
 import { CurrentUser } from '../auth/authenticated-user.js';
+import { AppError } from '../common/errors/app-error.js';
 import { ZodValidationPipe } from '../common/validation/zod-validation.pipe.js';
 import { MapsService } from './maps.service.js';
 import {
@@ -38,6 +39,7 @@ import {
   updateLayerRequestSchema,
   type CreateLayerRequest,
   type DeleteLayerRequest,
+  type OperationRequestEnvelope,
   type ReorderLayersRequest,
   type UpdateLayerRequest,
 } from './maps.schemas.js';
@@ -130,9 +132,23 @@ export class MapsController {
   applyOperations(
     @CurrentUser() actor: Actor,
     @Param(new ZodValidationPipe(mapIdParamSchema)) params: { mapId: string },
-    @Body(new ZodValidationPipe(operationRequestSchema)) input: ApplyOperationsRequest,
+    @Body(new ZodValidationPipe(operationRequestSchema)) input: OperationRequestEnvelope,
   ) {
-    return this.maps.applyOperations(actor.id, params.mapId, input);
+    if (input.schemaVersion !== MAP_MODEL_SCHEMA_VERSION) {
+      throw new AppError(
+        'MAP_SCHEMA_VERSION_UNSUPPORTED',
+        'This editor version cannot write the supplied map schema version.',
+        409,
+        {
+          expectedSchemaVersion: MAP_MODEL_SCHEMA_VERSION,
+          receivedSchemaVersion: input.schemaVersion,
+        },
+      );
+    }
+    return this.maps.applyOperations(actor.id, params.mapId, {
+      ...input,
+      schemaVersion: MAP_MODEL_SCHEMA_VERSION,
+    } as ApplyOperationsRequest);
   }
 
   @Post('maps/:mapId/layers')
@@ -142,7 +158,7 @@ export class MapsController {
     @Body(new ZodValidationPipe(createLayerRequestSchema)) input: CreateLayerRequest,
   ) {
     return this.maps.applyOperations(actor.id, params.mapId, {
-      schemaVersion: 1,
+      schemaVersion: MAP_MODEL_SCHEMA_VERSION,
       ...input,
       operations: [{ type: 'layer.create', layer: input.layer }],
     });
@@ -155,7 +171,7 @@ export class MapsController {
     @Body(new ZodValidationPipe(updateLayerRequestSchema)) input: UpdateLayerRequest,
   ) {
     return this.maps.applyOperations(actor.id, params.mapId, {
-      schemaVersion: 1,
+      schemaVersion: MAP_MODEL_SCHEMA_VERSION,
       ...input,
       operations: [{ type: 'layer.update', layerId: params.layerId, changes: input.changes }],
     });
@@ -168,7 +184,7 @@ export class MapsController {
     @Body(new ZodValidationPipe(reorderLayersRequestSchema)) input: ReorderLayersRequest,
   ) {
     return this.maps.applyOperations(actor.id, params.mapId, {
-      schemaVersion: 1,
+      schemaVersion: MAP_MODEL_SCHEMA_VERSION,
       ...input,
       operations: [
         { type: 'layer.reorder', parentId: input.parentId, orderedLayerIds: input.orderedLayerIds },
@@ -183,7 +199,7 @@ export class MapsController {
     @Body(new ZodValidationPipe(deleteLayerRequestSchema)) input: DeleteLayerRequest,
   ) {
     return this.maps.applyOperations(actor.id, params.mapId, {
-      schemaVersion: 1,
+      schemaVersion: MAP_MODEL_SCHEMA_VERSION,
       ...input,
       operations: [
         {
