@@ -167,7 +167,16 @@ export class ObjectProjection {
   }
 
   destroy(): void {
-    for (const [objectId, view] of this.views) this.remove(objectId, view);
+    // The Application owns the mounted display tree. During editor teardown it
+    // must destroy Text while its CanvasTextSystem is still alive; destroying
+    // each Text here can return a texture after that system has been disposed.
+    // Mark async views inert and release asset leases, then let Application
+    // perform the display-tree destruction in its own lifecycle order.
+    for (const view of this.views.values()) {
+      view.disposed = true;
+      view.lease?.release();
+    }
+    this.views.clear();
     this.objects.clear();
   }
 

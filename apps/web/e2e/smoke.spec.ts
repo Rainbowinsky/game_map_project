@@ -7,6 +7,7 @@ const ids = {
   layer: '70000000-0000-4000-8000-000000000004',
   pathLayer: '70000000-0000-4000-8000-000000000007',
   regionLayer: '70000000-0000-4000-8000-000000000008',
+  textLayer: '70000000-0000-4000-8000-000000000009',
   map2: '70000000-0000-4000-8000-000000000005',
   chunk: '70000000-0000-4000-8000-000000000006',
 };
@@ -75,6 +76,20 @@ const mapDocument = (id = ids.map, name = '灰烬海岸', revision = 0) => ({
       name: 'Regions',
       type: 'region',
       order: 2,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: 'normal',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    {
+      id: ids.textLayer,
+      mapId: id,
+      parentId: null,
+      name: 'Labels',
+      type: 'text',
+      order: 3,
       visible: true,
       locked: false,
       opacity: 1,
@@ -291,6 +306,70 @@ test('opens a recent map and restores the editor route after refresh', async ({ 
   await page.reload();
   await expect(page).toHaveURL(new RegExp(`/editor/${ids.map}$`));
   await expect(page.getByRole('heading', { name: '灰烬海岸' })).toBeVisible();
+});
+
+test('navigates the map with the accessible minimap controls', async ({ page }) => {
+  await prepare(page);
+  await page.goto(`/editor/${ids.map}`);
+  await expect(page.getByTestId('pixi-host').locator('canvas')).toHaveCount(1);
+  const minimap = page.getByTestId('minimap-canvas');
+  const coordinates = page.getByTestId('world-coordinates');
+  await expect(minimap).toHaveAttribute('aria-label', /点击或拖动/);
+
+  const mapCanvas = page.getByTestId('pixi-host');
+  const mapBounds = await mapCanvas.boundingBox();
+  if (!mapBounds) throw new Error('Map canvas has no visible bounds.');
+  const zoomBefore = await page.getByTestId('camera-zoom').getAttribute('data-camera-zoom');
+  await mapCanvas.dispatchEvent('wheel', {
+    deltaY: -1_200,
+    clientX: mapBounds.x + mapBounds.width / 2,
+    clientY: mapBounds.y + mapBounds.height / 2,
+  });
+  await expect(page.getByTestId('camera-zoom')).not.toHaveAttribute(
+    'data-camera-zoom',
+    zoomBefore ?? '',
+  );
+  const beforeKeyboard = await coordinates.getAttribute('data-camera-x');
+  await minimap.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(coordinates).not.toHaveAttribute('data-camera-x', beforeKeyboard ?? '');
+
+  const beforeClick = Number(await coordinates.getAttribute('data-camera-x'));
+  await minimap.click({ position: { x: 32, y: 74 } });
+  await expect
+    .poll(async () => Number(await coordinates.getAttribute('data-camera-x')))
+    .toBeLessThan(beforeClick);
+
+  await page.getByRole('button', { name: '隐藏缩略导航' }).click();
+  await expect(minimap).toBeHidden();
+  await page.getByRole('button', { name: '显示缩略导航' }).click();
+  await expect(minimap).toBeVisible();
+});
+
+test('returns from an editor containing canvas text without a Pixi teardown error', async ({
+  page,
+}) => {
+  const pageErrors: Error[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error));
+  await prepare(page);
+  await page.goto(`/editor/${ids.map}`);
+  const canvas = page.getByTestId('pixi-host');
+  await expect(canvas.locator('canvas')).toHaveCount(1);
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error('Map canvas has no visible bounds.');
+
+  await page.getByRole('button', { name: '文字' }).click();
+  await canvas.dispatchEvent('pointerdown', {
+    button: 0,
+    pointerId: 61,
+    clientX: bounds.x + bounds.width / 2,
+    clientY: bounds.y + bounds.height / 2,
+  });
+  await expect(page.getByTestId('visible-object-count')).toContainText('1 / 1');
+  await expect(page.getByTestId('save-status')).toContainText('已保存');
+  await page.locator('.editor-back').click();
+  await expect(page).toHaveURL('/');
+  await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
 });
 
 test('exports a complete-map PNG with a safe preview resolution', async ({ page }) => {

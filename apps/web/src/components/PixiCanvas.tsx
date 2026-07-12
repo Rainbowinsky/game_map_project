@@ -70,6 +70,7 @@ export interface PixiCanvasHandle {
   zoomOut(): void;
   fitMap(animate?: boolean): void;
   focusAt(point: WorldPoint, animate?: boolean): void;
+  centerAt(point: WorldPoint, animate?: boolean): void;
   getExportMaxTextureSize(): number | null;
   exportPng(longEdge: number): Promise<PngExportResult>;
 }
@@ -178,9 +179,11 @@ function editableLayerId(type: 'text' | 'marker'): string | null {
   const { layersById } = useMapStore.getState();
   const active = activeLayerId ? layersById[activeLayerId] : undefined;
   if (active?.type === type && isLayerEffectivelyEditable(active.id, layersById)) return active.id;
-  return Object.values(layersById)
-    .filter((layer) => layer.type === type && isLayerEffectivelyEditable(layer.id, layersById))
-    .sort((left, right) => right.order - left.order)[0]?.id ?? null;
+  return (
+    Object.values(layersById)
+      .filter((layer) => layer.type === type && isLayerEffectivelyEditable(layer.id, layersById))
+      .sort((left, right) => right.order - left.order)[0]?.id ?? null
+  );
 }
 
 function clampToMap(document: MapDocument, point: WorldPoint): WorldPoint {
@@ -361,13 +364,31 @@ function createStampObject(
 function objectBase(document: MapDocument, layerId: string, point: WorldPoint, name: string) {
   const now = new Date().toISOString();
   const position = clampToMap(document, point);
-  const zIndex = Math.max(-1, ...Object.values(useMapStore.getState().objectsById)
-    .filter((object) => object.layerId === layerId).map((object) => object.zIndex)) + 1;
+  const zIndex =
+    Math.max(
+      -1,
+      ...Object.values(useMapStore.getState().objectsById)
+        .filter((object) => object.layerId === layerId)
+        .map((object) => object.zIndex),
+    ) + 1;
   return {
-    id: crypto.randomUUID(), mapId: document.id, layerId,
-    chunk: toChunkCoordinate(position, document.settings.chunkSize), name, ...position,
-    rotation: 0, scaleX: 1, scaleY: 1, zIndex, visible: true, locked: false,
-    opacity: 1, metadata: {}, revision: 0, createdAt: now, updatedAt: now,
+    id: crypto.randomUUID(),
+    mapId: document.id,
+    layerId,
+    chunk: toChunkCoordinate(position, document.settings.chunkSize),
+    name,
+    ...position,
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
+    zIndex,
+    visible: true,
+    locked: false,
+    opacity: 1,
+    metadata: {},
+    revision: 0,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -378,8 +399,12 @@ function createTextObject(document: MapDocument, point: WorldPoint): MapObject {
   const text = draft.text.trim() || '新文字';
   return mapObjectSchema.parse({
     ...objectBase(document, layerId, point, text.slice(0, 120)),
-    type: 'text', text, fontSize: draft.fontSize, align: draft.align,
-    fontToken: 'font.default', colorToken: 'text.default',
+    type: 'text',
+    text,
+    fontSize: draft.fontSize,
+    align: draft.align,
+    fontToken: 'font.default',
+    colorToken: 'text.default',
   });
 }
 
@@ -392,15 +417,39 @@ function createLocationPair(document: MapDocument, point: WorldPoint) {
   const now = new Date().toISOString();
   const position = clampToMap(document, point);
   const marker = mapObjectSchema.parse({
-    ...objectBase(document, layerId, position, `${draft.name} 标记`), id: markerId,
-    type: 'marker', locationId: id, iconAssetId: null, minZoom: null, maxZoom: null,
+    ...objectBase(document, layerId, position, `${draft.name} 标记`),
+    id: markerId,
+    type: 'marker',
+    locationId: id,
+    iconAssetId: null,
+    minZoom: null,
+    maxZoom: null,
   });
-  const tags = [...new Set(draft.tags.split(',').map((tag) => tag.trim()).filter(Boolean))];
+  const tags = [
+    ...new Set(
+      draft.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  ];
   const location = locationSchema.parse({
-    id, mapId: document.id, name: draft.name, type: draft.type, ...position,
-    summary: draft.summary.trim() || null, description: draft.description.trim() || null,
-    regionId: null, iconAssetId: null, markerObjectId: markerId, tags, customFields: {},
-    minZoom: null, maxZoom: null, createdAt: now, updatedAt: now,
+    id,
+    mapId: document.id,
+    name: draft.name,
+    type: draft.type,
+    ...position,
+    summary: draft.summary.trim() || null,
+    description: draft.description.trim() || null,
+    regionId: null,
+    iconAssetId: null,
+    markerObjectId: markerId,
+    tags,
+    customFields: {},
+    minZoom: null,
+    maxZoom: null,
+    createdAt: now,
+    updatedAt: now,
   });
   return { location, marker };
 }
@@ -547,14 +596,23 @@ export function PixiCanvas({
       const screen = controller.worldToScreen({ x: object.x, y: object.y });
       const zoom = controller.getSnapshot().camera.zoom;
       const lines = textEditor.element.value.split('\n');
-      const width = Math.max(80, Math.max(...lines.map((line) => Math.max(1, [...line].length))) * object.fontSize * 0.68 * zoom + 20);
+      const width = Math.max(
+        80,
+        Math.max(...lines.map((line) => Math.max(1, [...line].length))) *
+          object.fontSize *
+          0.68 *
+          zoom +
+          20,
+      );
       const height = Math.max(38, lines.length * object.fontSize * 1.25 * zoom + 14);
       textEditor.element.style.left = `${screen.x}px`;
       textEditor.element.style.top = `${screen.y}px`;
       textEditor.element.style.width = `${width}px`;
       textEditor.element.style.height = `${height}px`;
       textEditor.element.style.fontSize = `${Math.max(12, object.fontSize * zoom)}px`;
-      textEditor.element.style.fontFamily = themeRegistry.resolve(initialDocument.themeId).tokens.defaultFontFamily;
+      textEditor.element.style.fontFamily = themeRegistry.resolve(
+        initialDocument.themeId,
+      ).tokens.defaultFontFamily;
       textEditor.element.style.textAlign = object.align;
       textEditor.element.style.transform = `${object.align === 'left' ? 'translate(0, -50%)' : object.align === 'right' ? 'translate(-100%, -50%)' : 'translate(-50%, -50%)'} rotate(${object.rotation}rad)`;
     };
@@ -573,7 +631,9 @@ export function PixiCanvas({
       }
       try {
         if (text !== object.text)
-          commandManager.execute(new UpdateObjectCommand(object.id, { text }, `inline-text:${object.id}`, 'Edit text'));
+          commandManager.execute(
+            new UpdateObjectCommand(object.id, { text }, `inline-text:${object.id}`, 'Edit text'),
+          );
         closeTextEditor();
         onInteractionError?.(null);
         return true;
@@ -857,7 +917,9 @@ export function PixiCanvas({
           commandManager.execute(new CreateObjectCommand(object));
           if (object.type === 'text') beginTextEditor(object);
           onInteractionError?.(null);
-        } catch (error) { reportError(error); }
+        } catch (error) {
+          reportError(error);
+        }
         return;
       }
       if (toolRef.current === 'location') {
@@ -867,7 +929,9 @@ export function PixiCanvas({
           commandManager.execute(new CreateLocationCommand(location, marker));
           useEditorStore.getState().setSelection([marker.id]);
           onInteractionError?.(null);
-        } catch (error) { reportError(error); }
+        } catch (error) {
+          reportError(error);
+        }
         return;
       }
       if (toolRef.current === 'terrain-brush' || toolRef.current === 'terrain-eraser') {
@@ -1220,7 +1284,16 @@ export function PixiCanvas({
             animate && !reducedMotion,
           ),
         focusAt: (point, animate = true) =>
-          controller.focus({ x: point.x - 32, y: point.y - 32, width: 64, height: 64 }, 160, animate && !reducedMotion),
+          controller.focus(
+            { x: point.x - 32, y: point.y - 32, width: 64, height: 64 },
+            160,
+            animate && !reducedMotion,
+          ),
+        centerAt: (point, animate = true) =>
+          controller.moveTo(
+            { ...controller.getSnapshot().camera, x: point.x, y: point.y },
+            animate && !reducedMotion,
+          ),
         getExportMaxTextureSize: () => renderer.getExportMaxTextureSize(),
         exportPng: (longEdge) => renderer.exportPng(longEdge),
       });

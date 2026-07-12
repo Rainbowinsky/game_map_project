@@ -1649,6 +1649,58 @@ svg {
   color: #8d9487;
   font-size: 0.55rem;
 }
+.minimap {
+  position: absolute;
+  right: 1rem;
+  bottom: 5.9rem;
+  z-index: 3;
+  width: 220px;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 7px;
+  background: rgb(26 29 24 / 92%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 26%);
+  backdrop-filter: blur(8px);
+}
+.minimap__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 1.8rem;
+  padding-left: 0.55rem;
+  color: #aab1a2;
+  font-size: 0.52rem;
+  letter-spacing: 0.06em;
+}
+.minimap__header button {
+  height: 100%;
+  padding: 0 0.55rem;
+  border: 0;
+  border-left: 1px solid rgb(255 255 255 / 9%);
+  color: #8e9688;
+  background: transparent;
+  font-size: 0.5rem;
+  cursor: pointer;
+}
+.minimap__header button:hover,
+.minimap__header button:focus-visible {
+  color: #d4dacd;
+  background: rgb(255 255 255 / 8%);
+}
+.minimap--closed {
+  width: auto;
+}
+.minimap__canvas {
+  display: block;
+  width: 220px;
+  height: 148px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.minimap__canvas:focus-visible {
+  outline: 2px solid #c6cfb5;
+  outline-offset: -2px;
+}
 .editor-inspector {
   display: flex;
   flex-direction: column;

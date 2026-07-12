@@ -9,7 +9,7 @@
     "lint": "eslint src e2e *.ts --max-warnings=0",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:benchmark": "vitest bench src/performance/stamp-projection.bench.ts --run",
+    "test:benchmark": "vitest bench src/performance/stamp-projection.bench.ts src/performance/minimap-projection.bench.ts --run",
     "test:e2e": "playwright test",
     "typecheck": "tsc -b"
   },

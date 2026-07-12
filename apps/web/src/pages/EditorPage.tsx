@@ -12,6 +12,7 @@ import { LayerPanel } from '../components/LayerPanel.js';
 import { ObjectInspector } from '../components/ObjectInspector.js';
 import { LocationPanel } from '../components/LocationPanel.js';
 import { AssetLibraryPanel } from '../components/AssetLibraryPanel.js';
+import { Minimap } from '../components/Minimap.js';
 import { ToolSettingsPanel, type ToolPanelPosition } from '../components/ToolSettingsPanel.js';
 import {
   PixiCanvas,
@@ -69,6 +70,7 @@ export function EditorPage() {
   const session = useSessionStore((state) => state.session);
   const document = useMapStore((state) => state.document);
   const objectCount = useMapStore((state) => Object.keys(state.objectsById).length);
+  const objects = useMapStore((state) => state.objectsById);
   const clearMap = useMapStore((state) => state.clear);
   const tool = useEditorStore((state) => state.tool);
   const activeStampAssetId = useEditorStore((state) => state.activeStampAssetId);
@@ -650,6 +652,17 @@ export function EditorPage() {
             <Icon name="plus" />
           </button>
         </div>
+        <Minimap
+          document={document}
+          objects={objects}
+          camera={telemetry.camera}
+          canvasViewport={{
+            width: stageRef.current?.clientWidth ?? 1,
+            height: stageRef.current?.clientHeight ?? 1,
+          }}
+          theme={resolvedTheme.tokens}
+          onCenterAt={(point) => canvasHandle.current?.centerAt(point)}
+        />
       </section>
       <aside
         className={`editor-inspector panel-slide panel-slide--right ${rightPanelOpen ? 'is-open' : ''}`}
@@ -709,7 +722,11 @@ export function EditorPage() {
       <footer className="editor-status">
         <span>工具：{toolInfo.find((item) => item.id === tool)?.label}</span>
         <i />
-        <span data-testid="world-coordinates">
+        <span
+          data-testid="world-coordinates"
+          data-camera-x={telemetry.camera.x}
+          data-camera-y={telemetry.camera.y}
+        >
           X {Math.round(telemetry.pointerWorld?.x ?? telemetry.camera.x)}&nbsp;&nbsp; Y{' '}
           {Math.round(telemetry.pointerWorld?.y ?? telemetry.camera.y)}
         </span>

@@ -1,8 +1,9 @@
-import { Container, Texture } from 'pixi.js';
+import { Container, Text, Texture } from 'pixi.js';
 import type { MapObject } from '@fantasy-map/map-model';
 import {
   createMapDocumentFixture,
   createPathMapObjectFixture,
+  createTextMapObjectFixture,
 } from '@fantasy-map/map-model/fixtures';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -102,5 +103,25 @@ describe('ObjectProjection', () => {
     projection.removeObject(path.id);
     expect(layers.getLayerContainer(path.layerId)?.children).toHaveLength(0);
     root.destroy({ children: true });
+  });
+
+  it('leaves mounted canvas text to the Application-owned display-tree teardown', () => {
+    const root = new Container();
+    const layers = new RendererProjection(root);
+    const document = createMapDocumentFixture();
+    const text = createTextMapObjectFixture();
+    const source = document.layers[1]!;
+    const textLayer = { ...source, id: text.layerId, type: 'text' as const, order: 2 };
+    layers.sync([...document.layers, textLayer]);
+    const projection = new ObjectProjection(layers, assets());
+
+    projection.setTheme(themeRegistry.resolve('mvp-classic').tokens);
+    projection.sync([text]);
+    const destroy = vi.spyOn(Text.prototype, 'destroy');
+    projection.destroy();
+
+    expect(destroy).not.toHaveBeenCalled();
+    root.destroy({ children: true });
+    destroy.mockRestore();
   });
 });
