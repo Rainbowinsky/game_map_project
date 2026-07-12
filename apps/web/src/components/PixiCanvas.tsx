@@ -199,6 +199,9 @@ export function PixiCanvas({
       ) {
         renderer.syncLayers(Object.values(map.layersById));
       }
+      if (patches.some((patch) => patch.type === 'document.replace') && map.document) {
+        renderer.syncDocument(map.document);
+      }
       for (const patch of patches) {
         if (patch.type === 'object.create' || patch.type === 'object.replace') {
           renderer.upsertObject(patch.object);

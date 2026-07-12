@@ -22,6 +22,7 @@ import { useEditorStore, type EditorTool } from '../stores/editor-store.js';
 import { useMapStore } from '../stores/map-store.js';
 import { useSessionStore } from '../stores/session-store.js';
 import { CommandManager } from '../editor/commands/CommandManager.js';
+import { UpdateMapMetadataCommand } from '../editor/commands/commands.js';
 import { createMapCommandContext } from '../editor/commands/map-command-context.js';
 import { handleHistoryShortcut } from '../editor/commands/shortcuts.js';
 import {
@@ -32,6 +33,7 @@ import {
 } from '../editor/object-actions.js';
 import { useEditorAutosave } from '../editor/autosave/use-editor-autosave.js';
 import { downloadPngBlob } from '../exports/png-exporter.js';
+import { themeRegistry } from '../themes/ThemeRegistry.js';
 
 const toolInfo: { id: EditorTool; icon: 'select' | 'pan' | 'stamp'; label: string; key: string }[] =
   [
@@ -121,6 +123,14 @@ export function EditorPage() {
       setExporting(false);
     }
   }, []);
+  const changeTheme = useCallback(
+    (themeId: string) => {
+      commandManager.execute(
+        new UpdateMapMetadataCommand({ type: 'map.update', changes: { themeId } }),
+      );
+    },
+    [commandManager],
+  );
   const query = useQuery({
     queryKey: ['map-load', mapId],
     queryFn: () => loadMapIntoStore(session?.accessToken ?? '', mapId),
@@ -181,6 +191,7 @@ export function EditorPage() {
       </main>
     );
   if (query.isPending || !document) return <LoadingState editor />;
+  const resolvedTheme = themeRegistry.resolve(document.themeId);
 
   return (
     <main
@@ -235,6 +246,16 @@ export function EditorPage() {
         >
           导出
         </button>
+        <label className="theme-select">
+          <span>主题</span>
+          <select value={document.themeId} onChange={(event) => changeTheme(event.target.value)}>
+            {themeRegistry.list().map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
         <button className="avatar avatar--small">{session.user.displayName.slice(0, 1)}</button>
       </header>
       <aside
@@ -289,6 +310,12 @@ export function EditorPage() {
         {interactionError && (
           <div className="stage-error" role="alert">
             {interactionError}
+          </div>
+        )}
+        {resolvedTheme.usedFallback && (
+          <div className="stage-warning" role="status">
+            主题“{document.themeId}”不可用，当前正使用“{resolvedTheme.definition.displayName}
+            ”。请选择内置主题以恢复。
           </div>
         )}
         {autosave.multiTabWarning && (

@@ -5,6 +5,7 @@ import {
   type MapDocument,
   type MapObject,
   type ObjectTransform,
+  type ThemeTokens,
   type Viewport,
   type WorldPoint,
   type WorldRect,
@@ -24,9 +25,10 @@ import {
   rendererMaxTextureSize,
   type PngExportResult,
 } from '../exports/png-exporter.js';
-import { drawMapArtwork } from './map-artwork.js';
+import { colorToNumber, drawMapArtwork } from './map-artwork.js';
 import { ObjectProjection } from './ObjectProjection.js';
 import { RendererProjection } from './RendererProjection.js';
+import { themeRegistry } from '../themes/ThemeRegistry.js';
 
 const GRID_LINE_LIMIT = 180;
 
@@ -61,8 +63,14 @@ export class MapRenderer {
   private selectedIds: readonly string[] = [];
   private previewObjects: readonly MapObject[] | null = null;
 
-  constructor(private readonly document: MapDocument) {
+  private document: MapDocument;
+  private themeTokens: ThemeTokens;
+
+  constructor(document: MapDocument) {
+    this.document = document;
+    this.themeTokens = themeRegistry.resolve(document.themeId).tokens;
     this.mapLayers = document.layers;
+    this.objects.setTheme(this.themeTokens);
   }
 
   async mount(host: HTMLElement): Promise<HTMLCanvasElement | null> {
@@ -128,6 +136,7 @@ export class MapRenderer {
     return exportMapToPng({
       renderer: this.application.renderer,
       document: this.document,
+      themeTokens: this.themeTokens,
       layers: this.mapLayers,
       objects: [...this.mapObjects.values()],
       requestedLongEdge,
@@ -139,6 +148,18 @@ export class MapRenderer {
     if (this.destroyed) return;
     this.mapLayers = layers;
     this.projection.sync(layers);
+  }
+
+  syncDocument(document: MapDocument): void {
+    if (this.destroyed) return;
+    if (document.id !== this.document.id) throw new Error('Cannot sync another map document.');
+    this.document = document;
+    this.themeTokens = themeRegistry.resolve(document.themeId).tokens;
+    this.objects.setTheme(this.themeTokens);
+    if (!this.initialized) return;
+    this.drawStaticScene();
+    this.drawGrid();
+    this.drawSelection();
   }
 
   syncObjects(objects: readonly MapObject[]): void {
@@ -186,8 +207,12 @@ export class MapRenderer {
     if (!rect) return;
     this.marqueeOverlay
       .rect(rect.x, rect.y, rect.width, rect.height)
-      .fill({ color: 0xa9b99a, alpha: 0.08 })
-      .stroke({ color: 0xc6d2b8, alpha: 0.9, width: 1 / this.camera.zoom });
+      .fill({ color: colorToNumber(this.themeTokens.selection), alpha: 0.08 })
+      .stroke({
+        color: colorToNumber(this.themeTokens.selection),
+        alpha: 0.9,
+        width: 1 / this.camera.zoom,
+      });
   }
 
   pick(point: WorldPoint): MapObject | undefined {
@@ -225,7 +250,7 @@ export class MapRenderer {
   }
 
   private drawStaticScene(): void {
-    drawMapArtwork(this.document, this.mapBackground, this.mapBoundary);
+    drawMapArtwork(this.document, this.themeTokens, this.mapBackground, this.mapBoundary);
   }
 
   private applyCamera(): void {
@@ -262,7 +287,7 @@ export class MapRenderer {
         .moveTo(x, top)
         .lineTo(x, bottom)
         .stroke({
-          color: 0x3e4839,
+          color: colorToNumber(this.themeTokens.grid),
           alpha: isMajor ? 0.2 : 0.08,
           width: (isMajor ? 1.2 : 0.7) / this.camera.zoom,
         });
@@ -277,7 +302,7 @@ export class MapRenderer {
         .moveTo(left, y)
         .lineTo(right, y)
         .stroke({
-          color: 0x3e4839,
+          color: colorToNumber(this.themeTokens.grid),
           alpha: isMajor ? 0.2 : 0.08,
           width: (isMajor ? 1.2 : 0.7) / this.camera.zoom,
         });
@@ -298,10 +323,10 @@ export class MapRenderer {
     const rotateY = bounds.y - 28 / this.camera.zoom;
     this.selectionOverlay
       .rect(bounds.x, bounds.y, bounds.width, bounds.height)
-      .stroke({ color: 0xdce8cf, alpha: 0.95, width: line })
+      .stroke({ color: colorToNumber(this.themeTokens.selection), alpha: 0.95, width: line })
       .moveTo(bounds.x + bounds.width / 2, bounds.y)
       .lineTo(bounds.x + bounds.width / 2, rotateY)
-      .stroke({ color: 0xdce8cf, alpha: 0.8, width: line });
+      .stroke({ color: colorToNumber(this.themeTokens.selection), alpha: 0.8, width: line });
     for (const [x, y] of [
       [bounds.x, bounds.y],
       [bounds.x + bounds.width, bounds.y],
@@ -310,13 +335,13 @@ export class MapRenderer {
     ] as const) {
       this.selectionOverlay
         .rect(x - handle / 2, y - handle / 2, handle, handle)
-        .fill({ color: 0x263024 })
-        .stroke({ color: 0xe6efda, width: line });
+        .fill({ color: colorToNumber(this.themeTokens.text) })
+        .stroke({ color: colorToNumber(this.themeTokens.selection), width: line });
     }
     this.selectionOverlay
       .circle(bounds.x + bounds.width / 2, rotateY, handle / 2)
-      .fill({ color: 0x9ead91 })
-      .stroke({ color: 0xf0f5e9, width: line });
+      .fill({ color: colorToNumber(this.themeTokens.grid) })
+      .stroke({ color: colorToNumber(this.themeTokens.selection), width: line });
   }
 
   private updateCulling(): void {

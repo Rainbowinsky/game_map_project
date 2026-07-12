@@ -13,6 +13,7 @@ import {
   type MapLayer,
   type MapObject,
   type StampMapObject,
+  type ThemeTokens,
 } from '@fantasy-map/map-model';
 
 import { getStampAsset } from '../assets/stamp-assets.js';
@@ -47,6 +48,8 @@ export interface PngExportResult {
 export interface PngExportInput {
   readonly renderer: Renderer;
   readonly document: MapDocument;
+  /** The editor's resolved tokens; exports must not resolve a different palette. */
+  readonly themeTokens: ThemeTokens;
   readonly layers: readonly MapLayer[];
   readonly objects: readonly MapObject[];
   readonly requestedLongEdge: number;
@@ -150,6 +153,7 @@ export async function loadExportTextures(
 export async function exportMapToPng({
   renderer,
   document,
+  themeTokens,
   layers,
   objects,
   requestedLongEdge,
@@ -170,7 +174,7 @@ export async function exportMapToPng({
     const layerRoot = new Container();
     const boundary = new Graphics();
     const projection = new RendererProjection(layerRoot);
-    drawMapArtwork(document, background, boundary);
+    drawMapArtwork(document, themeTokens, background, boundary);
     scene.addChild(background, layerRoot, boundary);
     projection.sync(layers);
 

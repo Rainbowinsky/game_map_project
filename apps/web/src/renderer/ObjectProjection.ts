@@ -4,6 +4,7 @@ import {
   type MapObject,
   type ObjectTransform,
   type StampMapObject,
+  type ThemeTokens,
   type WorldRect,
 } from '@fantasy-map/map-model';
 
@@ -40,6 +41,16 @@ export class ObjectProjection {
     private readonly layers: RendererProjection,
     private readonly assets: AssetRegistry,
   ) {}
+
+  /**
+   * All projections receive the resolved theme. Stamps deliberately retain
+   * their existing texture and explicit-tint semantics, so no redraw is needed.
+   */
+  setTheme(tokens: ThemeTokens): void {
+    if (tokens.allowedBlendModes.length === 0) {
+      throw new Error('ObjectProjection requires a theme with at least one blend mode.');
+    }
+  }
 
   sync(objects: readonly MapObject[]): void {
     const ids = new Set(objects.map((object) => object.id));
